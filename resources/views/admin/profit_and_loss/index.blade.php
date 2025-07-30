@@ -159,16 +159,16 @@ width: 10% !important;
 				@foreach($groupacount['get_chart_account'] as $key => $value)
 					@php 
 					$totalqty += 0;
-					$totalcost += abs($value['amount']);
+					$totalcost += abs($value['t_amount']);
 					@endphp
-					@if(abs($value['amount']) > 0)
+					@if(abs($value['t_amount']) > 0)
 					<tr>
 						<th width="2%"></th>
 						<td ><a target="_blank" href="{{route($model.'.gl-entries', [$value['account_code']])}}?to={{request()->get('start-date')}}&from={{request()->get('end-date')}}">{{$value['account_name']}}</a></td>
 						<th></th>
 						<th></th>
 						<th></th>
-						<td>{{ number_format(abs(abs($value['amount'])),2) }}</td>
+						<td>{{ number_format(abs(abs($value['t_amount'])),2) }}</td>
 					</tr>
 					@endif
 				@endforeach

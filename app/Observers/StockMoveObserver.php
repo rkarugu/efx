@@ -14,6 +14,15 @@ class StockMoveObserver implements ShouldHandleEventsAfterCommit
      */
     public function created(WaStockMove $waStockMove): void
     {
+        // Skip processing for POS cash sales (CS- prefix) as they handle their own stock movements
+        if ($waStockMove->document_no && str_starts_with($waStockMove->document_no, 'CS-')) {
+            \Log::info('Skipping ProcessStockUncompletedEntries for POS cash sale', [
+                'document_no' => $waStockMove->document_no,
+                'stock_move_id' => $waStockMove->id
+            ]);
+            return;
+        }
+        
         if($waStockMove->qauntity >= 1){
             ProcessStockUncompletedEntries::dispatch($waStockMove->wa_inventory_item_id,$waStockMove->wa_location_and_store_id);
         }

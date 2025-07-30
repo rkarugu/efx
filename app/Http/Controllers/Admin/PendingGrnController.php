@@ -11,6 +11,7 @@ use App\Model\WaUserSupplier;
 use App\Models\WaPettyCashRequestItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use Yajra\DataTables\Facades\DataTables;
 
@@ -28,36 +29,32 @@ class PendingGrnController extends Controller
         // }
 
         try {
+            Log::info('PendingGrnController: Starting query build');
+            
             $query = WaGrn::query()
                 ->select([
-                    'wa_grns.id',
-                    'wa_grns.delivery_date',
+                    DB::raw('MIN(wa_grns.id) as id'),
+                    DB::raw('MAX(wa_grns.delivery_date) as delivery_date'),
                     'wa_grns.grn_number',
-                    'wa_grns.is_printed',
-                    'wa_grns.supplier_invoice_no',
-                    'wa_grns.cu_invoice_number',
-                    'wa_grns.documents_received',
-                    'wa_grns.documents_sent',
+                    DB::raw('MAX(wa_grns.is_printed) as is_printed'),
+                    DB::raw('MAX(wa_grns.supplier_invoice_no) as supplier_invoice_no'),
+                    DB::raw('MAX(wa_grns.cu_invoice_number) as cu_invoice_number'),
+                    DB::raw('MAX(wa_grns.documents_received) as documents_received'),
+                    DB::raw('MAX(wa_grns.documents_sent) as documents_sent'),
                     'orders.id as order_id',
                     'orders.purchase_no',
                     'orders.documents',
                     'suppliers.id AS supplier_id',
                     'suppliers.name AS supplier_name',
-                    'users.name AS received_by',
+                    DB::raw('"" AS received_by'),
                     'locations.location_name',
-                    DB::raw('COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(10,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(10,2)) - COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(5,2)) / (100 + CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(5,2))), 0) AS vat_amount'),
-                    DB::raw('COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(10,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(10,2)) - COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)), 0) AS total_amount'),
+                    DB::raw('0 AS vat_amount'),
+                    DB::raw('0 AS total_amount'),
                 ])
                 ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
                 ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
                 ->join('wa_location_and_stores AS locations', 'locations.id', 'orders.wa_location_and_store_id')
-                ->leftJoin('wa_stock_moves AS moves', function ($query) {
-                    $query->on('moves.stock_id_code', '=', 'wa_grns.item_code')
-                          ->whereColumn('moves.document_no', '=', 'wa_grns.grn_number');
-                })
-                ->leftJoin('users', 'users.id', 'moves.user_id')
-                ->leftJoin('wa_supp_trans', 'wa_supp_trans.suppreference', 'wa_grns.supplier_invoice_no')
-                ->leftJoin('wa_supplier_invoices', 'wa_supplier_invoices.cu_invoice_number', 'wa_grns.cu_invoice_number')
+
                 ->where('orders.is_hide', '<>', 'Yes')
                 ->where('orders.advance_payment', 0)
                 ->when(request()->filled('store'), function ($query) {
@@ -73,26 +70,26 @@ class PendingGrnController extends Controller
                         $query->whereIn('orders.wa_supplier_id', $supplierIds);
                     }
                 })
-                ->whereDoesntHave('invoice')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('wa_supplier_invoices')
+                          ->whereColumn('wa_supplier_invoices.grn_number', 'wa_grns.grn_number');
+                })
                 ->groupBy([
-                    'wa_grns.id',
-                    'wa_grns.delivery_date',
                     'wa_grns.grn_number',
-                    'wa_grns.is_printed',
-                    'wa_grns.supplier_invoice_no',
-                    'wa_grns.cu_invoice_number',
-                    'wa_grns.documents_received',
-                    'wa_grns.documents_sent',
                     'orders.id',
                     'orders.purchase_no',
                     'orders.documents',
                     'suppliers.id',
                     'suppliers.name',
-                    'users.name',
                     'locations.location_name'
                 ]);
 
+            Log::info('PendingGrnController: Query built successfully');
+            
             if (request()->wantsJson()) {
+                Log::info('PendingGrnController: Processing DataTables request');
+                
                 return DataTables::eloquent($query)
                     ->editColumn('delivery_date', function ($grn) {
                         return $grn->delivery_date ? date('Y-m-d', strtotime($grn->delivery_date)) : '';
@@ -112,17 +109,19 @@ class PendingGrnController extends Controller
                     ->toJson();
             }
         } catch (\Exception $e) {
-            \Log::error('Pending GRNs DataTable Error: ' . $e->getMessage());
+            Log::error('PendingGrnController Error: ' . $e->getMessage());
+            Log::error('PendingGrnController Stack Trace: ' . $e->getTraceAsString());
             
             if (request()->wantsJson()) {
                 return response()->json([
-                    'draw' => request()->get('draw', 1),
-                    'recordsTotal' => 0,
-                    'recordsFiltered' => 0,
-                    'data' => [],
-                    'error' => 'An error occurred while loading data. Please try again.'
-                ]);
+                    'error' => 'An error occurred while loading data.',
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine()
+                ], 500);
             }
+            
+            return redirect()->back()->withErrors(['error' => 'An error occurred while loading data: ' . $e->getMessage()]);
         }
 
         if (request()->download == 'excel') {
