@@ -48,8 +48,18 @@ class PendingGrnController extends Controller
                     'suppliers.name AS supplier_name',
                     DB::raw('"" AS received_by'),
                     'locations.location_name',
-                    DB::raw('0 AS vat_amount'),
-                    DB::raw('0 AS total_amount'),
+                    DB::raw('COALESCE(SUM(
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.order_price")) AS DECIMAL(10,2)) * 
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.qty")) AS DECIMAL(10,2)) - 
+                        COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)
+                    ) * 
+                    CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.vat_rate")) AS DECIMAL(5,2)) / 
+                    (100 + CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.vat_rate")) AS DECIMAL(5,2))), 0) AS vat_amount'),
+                    DB::raw('COALESCE(SUM(
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.order_price")) AS DECIMAL(10,2)) * 
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.qty")) AS DECIMAL(10,2)) - 
+                        COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)
+                    ), 0) AS total_amount'),
                 ])
                 ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
                 ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
