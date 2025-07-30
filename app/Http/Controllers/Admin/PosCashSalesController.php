@@ -2066,4 +2066,64 @@ class PosCashSalesController extends Controller
 
         return $pdf->download('POS_Cash_Sale_Invoice_' . $data->sales_no . '.pdf');
     }
+
+    /**
+     * Display a listing of returned cash sales items.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function returned_cash_sales_list(Request $request)
+    {
+        $user = getLoggeduserProfile();
+        $permission = $this->mypermissionsforAModule();
+        $pmodule = $this->pmodule;
+        $title = "Cash Sales Return";
+        $model = 'pos-return-list';
+        
+        if (isset($permission[$pmodule . '___return-list']) || $permission == 'superadmin') {
+            $breadcum = [$title => route($pmodule . '.index'), 'Listing' => ''];
+            
+            $data = WaPosCashSalesItems::select([
+                '*',
+                DB::RAW('SUM(return_quantity) as rtn_qty'),
+                DB::RAW('SUM(return_quantity * selling_price) as rtn_total')
+            ])
+            ->with(['item', 'parent', 'parent.user', 'returned_by'])
+            ->where('is_return', 1)
+            ->where(function($w) use ($request, $permission, $user) {
+                if ($request->input('start-date') && $request->input('end-date')) {
+                    $w->whereBetween('return_date', [
+                        $request->input('start-date') . ' 00:00:00',
+                        $request->input('end-date') . " 23:59:59"
+                    ]);
+                }
+                // Apply location filter if not superadmin
+                if ($permission != 'superadmin' && isset($user->wa_location_and_store_id)) {
+                    $w->where('store_location_id', $user->wa_location_and_store_id);
+                }
+            })
+            ->orderBy('return_date', 'DESC')
+            ->groupBy('return_grn')
+            ->paginate(100);
+
+            $esd_details = null;
+            if ($data->isNotEmpty() && isset($data->first()->parent->sales_no)) {
+                $esd_details = WaEsdDetails::where('invoice_number', $data->first()->parent->sales_no)->first();
+            }
+
+            return view('admin.pos_cash_sales.returned_cash_sales_list', compact(
+                'data',
+                'title',
+                'model',
+                'breadcum',
+                'pmodule',
+                'permission',
+                'esd_details'
+            ));
+        } else {
+            Session::flash('warning', 'Invalid Request');
+            return redirect()->back();
+        }
+    }
 }
