@@ -37,6 +37,11 @@ class DeliverySchedule extends Model
         return $this->hasMany(DeliveryScheduleItem::class, 'delivery_schedule_id', 'id');
     }
 
+    public function inventoryItem(): BelongsTo
+    {
+        return $this->belongsTo(\App\Model\WaInventoryItem::class, 'inventory_item_id', 'id');
+    }
+
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class, 'route_id', 'id');
@@ -47,7 +52,21 @@ class DeliverySchedule extends Model
     {
         return $this->belongsTo(SalesmanShift::class, 'shift_id', 'id');
     }
-  public function vehicle(): BelongsTo
+
+    /**
+     * Get all shifts assigned to this delivery schedule (many-to-many)
+     */
+    public function shifts(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            SalesmanShift::class,
+            'delivery_schedule_shifts',
+            'delivery_schedule_id',
+            'salesman_shift_id'
+        )->withTimestamps();
+    }
+
+    public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class, 'vehicle_id', 'id');
     }
@@ -132,6 +151,16 @@ class DeliverySchedule extends Model
     public function scopeForVehicle(Builder $query, int $vehicleId): void
     {
         $query->where('vehicle_id', $vehicleId);
+    }
+
+    public function scopeForShiftId(Builder $query, int $shiftId): Builder
+    {
+        return $query->where(function (Builder $q) use ($shiftId) {
+            $q->where('shift_id', $shiftId)
+                ->orWhereHas('shifts', function (Builder $q2) use ($shiftId) {
+                    $q2->where('salesman_shifts.id', $shiftId);
+                });
+        });
     }
 
     public function shiftDuration(): Attribute

@@ -1,0 +1,23 @@
+Add this logging to PosCashSaleService.php after line 123 (right after the promotion query):
+
+// DEBUG: Log promotion detection
+\Log::info("Promotion Debug for Item {$item['item_id']}", [
+    'promotion_found' => $promotion ? true : false,
+    'promotion_id' => $promotion ? $promotion->id : null,
+    'item_quantity' => $item['item_quantity'],
+    'today' => Carbon::today()->toDateString()
+]);
+
+if ($promotion) {
+    \Log::info("Promotion Details", [
+        'promotion_type_id' => $promotion->promotion_type_id,
+        'sale_quantity' => $promotion->sale_quantity,
+        'promotion_quantity' => $promotion->promotion_quantity,
+        'promotion_item_id' => $promotion->promotion_item_id,
+        'status' => $promotion->status,
+        'from_date' => $promotion->from_date,
+        'to_date' => $promotion->to_date
+    ]);
+}
+
+Add this right after the existing promotion query (around line 123).

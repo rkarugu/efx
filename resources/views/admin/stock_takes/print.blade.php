@@ -49,7 +49,11 @@
                         ?>
                     <main>
                         @foreach ($categories as $category)
-                            @if ($freezeItems->where('item_category_id', $category->id)->count() > 0)
+                            @php
+                                // Use pre-grouped data for O(1) lookup instead of O(n) filtering
+                                $categoryItems = $itemsByBinAndCategory[$bin->uom_id][$category->id] ?? [];
+                            @endphp
+                            @if (count($categoryItems) > 0)
                             <h5 style="margin: 0px;">{{$category->category_description}}</h5>
                             <table  width="100%" cellspacing="0" border="1">
                                 <thead>
@@ -72,20 +76,18 @@
                                 </thead>
                                 <tbody>
                             </tr>
-                            @foreach ($freezeItems as $item)  
-                                @if ($item->wa_unit_of_measure == $bin->uom_id && $item->item_category_id == $category->id)
-                                    <tr>
-                                        <td>{{$item->stock_id_code}}</td>
-                                        <td>{{$item->title}}</td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td>
-                                    </tr>
-                                @endif
+                            @foreach ($categoryItems as $item)
+                                <tr>
+                                    <td>{{$item->stock_id_code}}</td>
+                                    <td>{{$item->title}}</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
                             @endforeach
                                 </tbody>
                             </table>

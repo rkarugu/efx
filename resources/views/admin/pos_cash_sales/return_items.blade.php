@@ -362,8 +362,12 @@ $(document).on('submit','.addExpense',function(e){
                 }
                 if (out.result === 1) {
                     form.successMessage(out.message);
-                    var url = out.receipt_url;
-                    print_this(url);
+                    
+                    // Only print if there's a receipt URL
+                    if (out.receipt_url) {
+                        var url = out.receipt_url;
+                        print_this(url);
+                    }
 
                     if (out.location) {
                         setTimeout(() => {

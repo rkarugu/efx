@@ -24,37 +24,58 @@
 
         #receipt-header span {
             display: block;
-            font-size: 50px;
+            font-size: 11px;
         }
 
         .normal {
             display: block;
-            font-size: 30px;
+            font-size: 9px;
         }
 
         div.dashed {
-            border-top: 5px dashed #000 !important;
-            border-bottom: 5px dashed #000 !important;
-            padding: 4px 0;
+            border-top: 1px dashed #000 !important;
+            border-bottom: 1px dashed #000 !important;
+            padding: 2px 0;
         }
         div.dashed2 {
-            /* border-top: 5px dashed #000 !important; */
-            border-bottom: 5px dashed #000 !important;
-            padding: 4px 0;
+            /* border-top: 1px dashed #000 !important; */
+            border-bottom: 1px dashed #000 !important;
+            padding: 2px 0;
         }
 
         .order-item {
-            font-size: 50px;
+            font-size: 11px;
             width: 50%;
             float: left;
         }
 
         .customer-details .normal {
-            font-size: 45px;
+            font-size: 10px;
         }
     </style> --}}
 
     <style>
+        @font-face {
+            font-family: 'bitArray-A2';
+            src: local('Courier New'), local('Courier'), monospace;
+            font-weight: normal;
+        }
+        @font-face {
+            font-family: 'bitArray-A2-bold';
+            src: local('Courier New'), local('Courier'), monospace;
+            font-weight: bold;
+        }
+        @font-face {
+            font-family: 'bitArray-A2-narrow';
+            src: local('Courier New'), local('Courier'), monospace;
+            font-weight: normal;
+            font-stretch: condensed;
+        }
+        
+        body {
+            font-family: "bitArray-A2", "Courier New", monospace;
+        }
+        
         #receipt-main {
             padding: 0;
             margin: 0;
@@ -69,28 +90,47 @@
 
         #receipt-header span {
             display: block;
-            font-size: 50px;
+            font-size: 28px;
         }
 
         .normal {
             display: block;
-            font-size: 50px;
+            font-size: 28px;
         }
 
         div.dashed {
-            border-top: 5px dashed #000 !important;
-            border-bottom: 5px dashed #000 !important;
+            border-top: 1px dotted #000 !important;
+            border-bottom: 1px dotted #000 !important;
             padding: 4px 0;
         }
 
         .order-item {
-            font-size: 50px;
+            font-size: 28px;
             width: 50%;
             float: left;
         }
 
         .customer-details .normal {
-            font-size: 45px;
+            font-size: 24px;
+        }
+        
+        hr.solid {
+            border: none;
+            border-top: 2px solid #000;
+            margin: 5px 0;
+        }
+        
+        hr.dotted {
+            border: none;
+            border-top: 1px dotted #000;
+            margin: 5px 0;
+        }
+        
+        .table-header {
+            font-family: 'bitArray-A2-bold', 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 28px;
+            padding: 5px 0;
         }
     </style>
 </head>
@@ -98,7 +138,7 @@
 <body>
 <div id="receipt-main">
     <div id="receipt-header">
-        <h3 style="margin: 10px; padding: 0; font-size: 40px;"> {{ $settings['COMPANY_NAME'] }} </h3>
+        <h3 style="margin: 5px; padding: 0; font-size: 32px; font-weight: bold; font-family: 'bitArray-A2-bold', 'Courier New', monospace;"> {{ $settings['COMPANY_NAME'] }} </h3>
 
         <span> {{ $settings['ADDRESS_2']}} {{ $settings['ADDRESS_3']}} </span>
         <span> Tel: {{ $settings['PHONE_NUMBER']}} </span>
@@ -107,48 +147,51 @@
         <span> PIN No: {{ $settings['PIN_NO']}} </span>
     </div>
 
-    <div style="margin-top: 20px; text-align: center;">
-        <h3 style="margin: 0; padding: 0; font-size: 45px;"> INVOICE </h3>
+    <div style="margin-top: 8px; text-align: center;">
+        <h3 style="margin: 0; padding: 0; font-size: 30px; font-weight: bold; font-family: 'bitArray-A2-bold', 'Courier New', monospace;"> INVOICE </h3>
     </div>
 
-    <div style="margin-top: 20px;" class="customer-details">
-        <span class="normal"> Order No.: {{ $data['order_number'] }} </span>
-        <span class="normal"> Time: {{ \Carbon\Carbon::now()->format('d/m/Y H:m:s') }} </span>
-        <span class="normal"> Sales Rep: {{ $data['salesman'] }} </span>
+    <div style="margin-top: 8px; text-align: center;" class="customer-details">
+        <span class="normal" style="font-weight: bold;"> Order No.: {{ $data['order_number'] }} </span>
+    </div>
+    
+    <div style="margin-top: 8px;" class="customer-details">
         <span class="normal"> Customer Name: {{ $data['customer_name'] }} </span>
         <span class="normal"> Customer Number: {{ $data['customer_number'] }} </span>
         <span class="normal"> Customer Pin: {{ $data['kra_pin'] }}</span>
-        <span class="normal"> Route: {{ $data['route'] }} </span>
         <br>
         <span class="normal"> Prices are inclusive of tax where applicable. </span>
     </div>
 
-    <br>
-    <br>
-
+    <hr class="solid">
+    <div class="table-header" style="position: relative; width: 100%; height: 35px;">
+        <span style="position: absolute; left: 0; width: 40%;">Item</span>
+        <span style="position: absolute; left: 40%; width: 15%; text-align: center;">Qty</span>
+        <span style="position: absolute; left: 55%; width: 20%; text-align: center;">Price</span>
+        <span style="position: absolute; left: 75%; width: 25%; text-align: right;">Amount</span>
+    </div>
+    <hr class="solid">
+    
     <div style="padding: 5px 0;">
         @foreach($data['items'] as $index => $item)
-            <div style="position: relative; width: 100%; margin-top: 10px; border-bottom: 5px dashed black;" class="order-item-main">
-                <div style="position: relative; width: 100%;" class="normal"> {{ $index + 1 }}. {{ ucwords(strtolower($item->title)) }} </div>
-                <div style="position: relative; width: 100%;">
-                    <div class="order-item"> {{ number_format($item->selling_price, 2) }} * {{ round($item->quantity) }} </div>
-                    <div class="order-item" style="text-align: right;"> {{ number_format($item->total_cost, 2) }} </div>
-
-                    <div style="clear: both;"></div>
+            <div style="position: relative; width: 100%; margin-top: 5px; border-bottom: 1px dotted black; padding-bottom: 5px;" class="order-item-main">
+                <div style="position: relative; width: 100%;" class="normal"> {{ $index + 1 }}. {{ ucwords(strtolower($item->title)) }} @if($item->selling_price == 0) <span style="font-weight: bold;">(PROMOTION)</span> @endif </div>
+                <div style="position: relative; width: 100%; height: 30px; font-size: 28px;">
+                    <span style="position: absolute; left: 40%; width: 15%; text-align: center;">{{ number_format($item->quantity, 2) }}</span>
+                    <span style="position: absolute; left: 55%; width: 20%; text-align: center;">{{ number_format($item->selling_price, 2) }}</span>
+                    <span style="position: absolute; left: 75%; width: 25%; text-align: right;">{{ number_format($item->total_cost, 2) }}</span>
                 </div>
                 @if($item->discount > 0)
-                    <div style="position: relative; width: 100%;">
-                        <div class="order-item"> Discount </div>
-                        <div class="order-item" style="text-align: right;"> {{ number_format($item->discount * -1, 2) }} </div>
-
-                        <div style="clear: both;"></div>
+                    <div style="position: relative; width: 100%; height: 30px; font-size: 28px;">
+                        <span style="position: absolute; left: 0; width: 40%; padding-left: 20px;">Discount</span>
+                        <span style="position: absolute; left: 75%; width: 25%; text-align: right;">{{ number_format($item->discount * -1, 2) }}</span>
                     </div>
                 @endif
             </div>
         @endforeach
     </div>
 
-    <div class="normal" style="margin-top: 10px; position: relative; width: 100%;">
+    <div class="normal" style="margin-top: 5px; position: relative; width: 100%;">
         <div style="margin-top: 5px;">
             <div style="position: relative; width: 50%; float: left;"> Gross Amount</div>
             <div style="position: relative; width: 50%; float: left; text-align: right;"> {{ number_format($data['gross_total'], 2) }} </div>
@@ -180,42 +223,24 @@
         </div>
     </div>
   
+    <hr class="dotted">
+    
+    <div style="margin-top: 10px;" class="customer-details">
+        <span class="normal"> Time: {{ \Carbon\Carbon::now()->format('d/m/Y h:i A') }} </span>
+        <span class="normal"> Sales Rep: {{ $data['salesman'] }} </span>
+        <span class="normal"> Route: {{ $data['route'] }} </span>
+    </div>
+    
+    <br>
+    
     <div class="dashed"  style="text-align: center">
-        <h2>NEW PAYMENT CHANNELS</h2>
-        <h3>(PLEASE DO NOT MAKE CASH PAYMENTS TO OUR STAFF. THE COMPANY WILL NOT BE LIABLE FOR ANY LOSS RESULTING FROM CASH TRANSACTIONS.)</h3>
+        <h2 style="font-size: 28px; margin: 3px 0; font-weight: bold;">PAYMENT CHANNELS</h2>
+        <h3 style="font-size: 22px; margin: 2px 0; font-weight: normal;">(PLEASE MAKE PAYMENTS THROUGH OUR AUTHORIZED CHANNELS)</h3>
         <br>
     </div>
    
-    <div class="dashed2">
-        <br>
-        <span class="normal"> MPESA Paybill: <strong>4144101</strong> </span>
-        <span class="normal"> Account No: <strong>{{ $payment_code }}</strong> </span>
-    </div>
-    <div class="dashed2">
-        <br>
-        <span class="normal"> KCB MPESA Paybill: 
-            <strong>{{ $restaurant->kcb_mpesa_paybill }}</strong>
-        </span>
-        <span class="normal"> Account No: <strong>{{ $payment_code }}</strong></span>
-        <br>
-    </div>
-    <div class="dashed2">
-        <br>
-        <span class="normal"> VOOMA Paybill: <strong>{{ $restaurant->kcb_vooma_paybill }}</strong> </span>
-        <span class="normal"> Account No: <strong>{{ $payment_code }}</strong> </span>
-        <br>
-
-    </div>
-    <div class="dashed2">
-        <br>
-        <span class="normal"> Equity Biller Number: <strong>{{ $restaurant->equity_paybill }}</strong> </span>
-        <span class="normal"> Account No: <strong>{{ $payment_code }}</strong></span>
-        <br>
-
-
-    </div>
     <br>
-    <span class="normal"> {{ $settings['INVOICE_NOTE']}}</span>
+    <span class="normal"> {{ $settings['INVOICE_NOTE'] ?? '' }}</span>
 
     <br>
 
@@ -228,10 +253,10 @@
         </div>
     @endif
 
-    <div style="margin-top: 40px; text-align: center; font-size: 50px;">
+    <div style="margin-top: 40px; text-align: center; font-size: 24px;">
         <span> Thank you for shopping with us. </span>
         <br>
-        <span> &copy; {{ \Carbon\Carbon:: now()->year }}.Powered by RetailPay. </span>
+        <span> &copy; {{ \Carbon\Carbon:: now()->year }}. Powered by Altrom Technologies. </span>
     </div>
 </div>
 </body>

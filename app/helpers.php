@@ -1549,7 +1549,19 @@ function getAllsalesmanLists()
 
 function getAllShiftList()
 {
-    $user_data = WaShift::orderBy('id', 'DESC')->pluck('shift_id', 'id');
+    $user_data = \App\SalesmanShift::with(['salesman', 'salesman_route'])
+        ->orderBy('id', 'DESC')
+        ->get()
+        ->mapWithKeys(function ($shift) {
+            $routeName = $shift->salesman_route ? $shift->salesman_route->route_name : 'Unknown Route';
+            $salesmanName = $shift->salesman ? $shift->salesman->name : 'Unknown Salesman';
+            $shiftDate = $shift->created_at ? $shift->created_at->format('Y-m-d') : 'Unknown Date';
+            $shiftType = ucfirst($shift->shift_type ?? 'Unknown');
+            $status = ucfirst($shift->status ?? 'Unknown');
+            
+            $label = "{$salesmanName} - {$routeName} ({$shiftDate}) - {$shiftType} - {$status}";
+            return [$shift->id => $label];
+        });
     return $user_data;
 }
 
@@ -1565,7 +1577,19 @@ function getLoadingShiftList()
 
 function getAllShiftLists()
 {
-    $user_data = WaShift::orderBy('id', 'DESC')->pluck('shift_id', 'id');
+    $user_data = \App\SalesmanShift::with(['salesman', 'salesman_route'])
+        ->orderBy('id', 'DESC')
+        ->get()
+        ->mapWithKeys(function ($shift) {
+            $routeName = $shift->salesman_route ? $shift->salesman_route->route_name : 'Unknown Route';
+            $salesmanName = $shift->salesman ? $shift->salesman->name : 'Unknown Salesman';
+            $shiftDate = $shift->created_at ? $shift->created_at->format('Y-m-d') : 'Unknown Date';
+            $shiftType = ucfirst($shift->shift_type ?? 'Unknown');
+            $status = ucfirst($shift->status ?? 'Unknown');
+            
+            $label = "{$salesmanName} - {$routeName} ({$shiftDate}) - {$shiftType} - {$status}";
+            return [$shift->id => $label];
+        });
     return $user_data;
 }
 
@@ -3055,7 +3079,10 @@ function sendMailForPurchaseOrder($email, $wa_purchase_order_id, $approve_level)
 
 function getAllSettings()
 {
-    return Setting::pluck('description', 'name')->toArray();
+    // Cache settings for 1 hour to improve performance
+    return \Cache::remember('all_settings', 3600, function () {
+        return Setting::pluck('description', 'name')->toArray();
+    });
 }
 
 function getAllReusitionUsers()
@@ -3107,6 +3134,42 @@ function getItemAvailableQuantity_C($stock_id_code, $wa_location_and_store_id)
         $available_quantity = $lists[0]->total_quantity;
     }
     return $available_quantity;
+}
+
+/**
+ * Batch fetch available quantities for multiple items
+ * Optimized version to avoid N+1 query problem
+ * 
+ * @param array $stock_id_codes Array of stock ID codes
+ * @param int $wa_location_and_store_id Location ID
+ * @return array Associative array [stock_id_code => quantity]
+ */
+function getItemsAvailableQuantities($stock_id_codes, $wa_location_and_store_id)
+{
+    if (empty($stock_id_codes)) {
+        return [];
+    }
+
+    $results = DB::table('wa_stock_moves')
+        ->whereIn('stock_id_code', $stock_id_codes)
+        ->where('wa_location_and_store_id', $wa_location_and_store_id)
+        ->select('stock_id_code', DB::raw('SUM(`qauntity`) as total_quantity'))
+        ->groupBy('stock_id_code')
+        ->get();
+
+    $quantities = [];
+    foreach ($results as $result) {
+        $quantities[$result->stock_id_code] = $result->total_quantity ?? 0;
+    }
+
+    // Fill in zeros for items not found
+    foreach ($stock_id_codes as $code) {
+        if (!isset($quantities[$code])) {
+            $quantities[$code] = 0;
+        }
+    }
+
+    return $quantities;
 }
 
 function getStockMoveType($row)

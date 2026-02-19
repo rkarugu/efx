@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Middleware;
 use Closure;
+use Illuminate\Http\Request as HttpRequest;
 class BlockIpMiddleware
 {
     // set IP addresses
@@ -12,7 +13,7 @@ class BlockIpMiddleware
      * @param  \Closure  $next
      * @return mixed
      */
-    public function handle($request, Closure $next)
+    public function handle(HttpRequest $request, Closure $next)
     {
         // if (!in_array($request->ip(), $this->blockIps)) {
         //     return response()->json("You don't have permission to access this website.");

@@ -24,6 +24,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         Commands\SendShiftAutoCloseReminder::class,
         Commands\AutoCloseSalesmanShifts::class,
+        Commands\AutoCloseShifts::class,
         Commands\CreateShifts::class,
         Commands\Utilities\UpdateTenderEntries::class,
         Commands\Utilities\UpdateOrderToShowMissingGrns::class,
@@ -91,7 +92,18 @@ class Kernel extends ConsoleKernel
             ->timezone('Africa/Nairobi');
 
         $schedule->command('app:auto-close-salesman-shifts')
-            ->twiceDaily(18, 20)
+            ->dailyAt('18:00')
+            ->timezone('Africa/Nairobi');
+
+        // Auto-close shifts at 7 PM and every hour after to catch any stragglers
+        $schedule->command('shifts:auto-close')
+            ->dailyAt('19:00')
+            ->timezone('Africa/Nairobi');
+        
+        // Also run hourly between 8 PM and midnight to catch shifts older than 24 hours
+        $schedule->command('shifts:auto-close')
+            ->hourly()
+            ->between('20:00', '23:59')
             ->timezone('Africa/Nairobi');
 
         $schedule->command('app:create-shifts')

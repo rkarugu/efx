@@ -23,6 +23,7 @@ use App\Model\WaPosCashSalesPayments;
 use App\Model\WaRouteCustomer;
 use App\Model\WaStockMove;
 use App\Models\HamperItem;
+use App\Models\RoutePricing;
 use App\Models\PromotionType;
 use App\Models\WaAccountTransaction;
 use App\User;
@@ -46,6 +47,7 @@ class PosCashSaleService
         $user = User::find($cashier_id);
         $companyPreference =  \App\Model\WaCompanyPreference::where('id', '1')->first();
         $customer = WaRouteCustomer::where('id',$route_customer)->first();
+        $route = $customer ? Route::find($customer->route_id) : null;
         $getLoggeduserProfile = getLoggeduserProfile();
         $dateTime = date('Y-m-d H:i:s');
 
@@ -109,10 +111,48 @@ class PosCashSaleService
         WaPosCashSalesItems::where('wa_pos_cash_sales_id',$parent->id)->delete();
         foreach ($items as $item) {
 
-            $selling_price = $products->firstWhere('id', $item['item_id'])->selling_price;
-            $promotion = ItemPromotion::where('inventory_item_id', $item['item_id'])->where('status', 'active')->first();
+            $selling_price = $item['item_selling_price'] ?? $products->firstWhere('id', $item['item_id'])->selling_price;
+            if (!array_key_exists('item_selling_price', $item)) {
+                $routeRestaurantId = $route?->restaurant_id ?? $parent->branch_id ?? null;
+                $routePrice = ($customer && $customer->route_id)
+                    ? RoutePricing::resolvePrice((int) $item['item_id'], (int) $customer->route_id, $routeRestaurantId)
+                    : null;
+                if ($routePrice !== null) {
+                    $selling_price = $routePrice;
+                }
+            }
+            $promotion = ItemPromotion::where('inventory_item_id', $item['item_id'])
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $today = Carbon::today();
+                $query->where('from_date', '<=', $today)
+                    ->where(function ($subQuery) use ($today) {
+                        $subQuery->where('to_date', '>=', $today)
+                                 ->orWhereNull('to_date');
+                    });
+            })
+            ->first();
+            
+            // DEBUG: Log promotion detection
+            \Log::info("Promotion Debug for Item {$item['item_id']}", [
+                'promotion_found' => $promotion ? true : false,
+                'promotion_id' => $promotion ? $promotion->id : null,
+                'item_quantity' => $item['item_quantity'],
+                'today' => Carbon::today()->toDateString()
+            ]);
 
-
+            if ($promotion) {
+                \Log::info("Promotion Details", [
+                    'promotion_type_id' => $promotion->promotion_type_id,
+                    'sale_quantity' => $promotion->sale_quantity,
+                    'promotion_quantity' => $promotion->promotion_quantity,
+                    'promotion_item_id' => $promotion->promotion_item_id,
+                    'status' => $promotion->status,
+                    'from_date' => $promotion->from_date,
+                    'to_date' => $promotion->to_date
+                ]);
+            }
+            
             if ($promotion) {
                 /*get promotion type*/
                 $promotionType = $promotion->promotion_type_id ? PromotionType::find($promotion->promotion_type_id)->description : null;
@@ -159,6 +199,50 @@ class PosCashSaleService
                         ];
                         self::raiseDemand($data);
 
+                    }
+
+                    /*Buy X Get Y Free*/
+                    if ($promotionType == PromotionMatrix::BSGY->value)
+                    {
+                        $orderQty = $item['item_quantity'];
+                        $promotionBatches = floor($orderQty / (float)$promotion->sale_quantity);
+
+                        if ($promotionBatches > 0) {
+                            $promotionQty = $promotionBatches * $promotion->promotion_quantity;
+                            $promotionItem = WaInventoryItem::find($promotion->promotion_item_id);
+                            $promotionItemQoh = WaStockMove::where('wa_inventory_item_id', $promotionItem->id)->where('wa_location_and_store_id', $user->wa_location_and_store_id)->sum('qauntity');
+                            if ($promotionQty <= $promotionItemQoh) {
+                                $childs[] = [
+                                    'wa_pos_cash_sales_id'=> $parent->id,
+                                    'wa_inventory_item_id'=> $promotionItem->id,
+                                    'store_location_id'=> $user->wa_location_and_store_id,
+                                    'qty' => $promotionQty,
+                                    'selling_price' => 0,
+                                    'discount_percent' => 0,
+                                    'total' => 0,
+                                    'discount_amount' => 0,
+                                    'vat_percentage' => 0,
+                                    'vat_amount' => 0,
+                                    'tax_manager_id' => $promotionItem->tax_manager_id,
+                                    'created_at' => $dateTime,
+                                    'updated_at' => $dateTime,
+                                    'standard_cost' => $promotionItem->standard_cost,
+                                ];
+                                
+                                \Log::info("Free item added to sale", [
+                                    'promotion_item_id' => $promotionItem->id,
+                                    'promotion_qty' => $promotionQty,
+                                    'customer_bought' => $orderQty,
+                                    'promotion_batches' => $promotionBatches
+                                ]);
+                            } else {
+                                \Log::warning("Insufficient stock for promotion item", [
+                                    'promotion_item_id' => $promotionItem->id,
+                                    'required_qty' => $promotionQty,
+                                    'available_qty' => $promotionItemQoh
+                                ]);
+                            }
+                        }
                     }
 
                 }else
@@ -243,7 +327,7 @@ class PosCashSaleService
 
     private static function generateNewSalesNumber(): string
     {
-        $maxAttempts = 5;
+        $maxAttempts = 10;
         $attempt = 1;
 
         while ($attempt <= $maxAttempts) {
@@ -253,22 +337,52 @@ class PosCashSaleService
                     ->lockForUpdate()
                     ->first();
 
+                if (!$series_module) {
+                    throw new \RuntimeException('CASH_SALES number series not found');
+                }
+
                 $lastNumberUsed = $series_module->last_number_used;
                 $newNumber = (int)$lastNumberUsed + 1;
                 $sales_no = $series_module->code . '-' . str_pad($newNumber, 5, "0", STR_PAD_LEFT);
 
-                $exists = WaInternalRequisition::where('requisition_no', $sales_no)->exists();
+                // Check for uniqueness in BOTH tables to prevent conflicts
+                $existsInCashSales = WaPosCashSales::where('sales_no', $sales_no)->exists();
+                $existsInRequisition = WaInternalRequisition::where('requisition_no', $sales_no)->exists();
 
-                if (!$exists) {
+                if (!$existsInCashSales && !$existsInRequisition) {
                     $series_module->update(['last_number_used' => $newNumber]);
                     DB::commit();
+                    
+                    // Log successful generation for debugging
+                    \Log::info('Generated unique sales number', [
+                        'sales_no' => $sales_no,
+                        'attempt' => $attempt
+                    ]);
+                    
                     return $sales_no;
                 }
+                
                 DB::rollBack();
+                
+                // Log collision for debugging
+                \Log::warning('Sales number collision detected', [
+                    'sales_no' => $sales_no,
+                    'attempt' => $attempt,
+                    'exists_in_cash_sales' => $existsInCashSales,
+                    'exists_in_requisition' => $existsInRequisition
+                ]);
+                
                 $attempt++;
+                
+                // Add small delay to reduce race conditions
+                usleep(rand(10000, 50000)); // 10-50ms random delay
 
             } catch (\Exception $e) {
                 DB::rollBack();
+                \Log::error('Error generating sales number', [
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage()
+                ]);
                 throw $e;
             }
         }
@@ -710,7 +824,7 @@ class PosCashSaleService
                 'requisition_date' => Carbon::now(),
                 'name' => $cashSales->customer,
                 'route_id' => $customer->route_id,
-                'route' => $customer->route->route_name,
+                'route' => $customer->route ? $customer->route->route_name : null,
                 'customer_id' => $customer->customer_id,
                 'wa_route_customer_id' => $cashSales->wa_route_customer_id,
                 'customer' => $cashSales->customer,
@@ -757,7 +871,8 @@ class PosCashSaleService
                 ]);
             }
 
-            self::stockMove($cashSales);
+            // Stock moves are now handled by PerformPostSaleActions job
+            // self::stockMove($cashSales); // REMOVED - causes duplication
 
             return true;
         } catch (\Exception $e) {
@@ -796,7 +911,7 @@ class PosCashSaleService
                     'requisition_date' => Carbon::now(),
                     'name' => $cashSales->customer,
                     'route_id' => $customer->route_id,
-                    'route' => $customer->route->route_name,
+                    'route' => $customer->route ? $customer->route->route_name : null,
                     'customer_id' => $customer->customer_id,
                     'wa_route_customer_id' => $cashSales->wa_route_customer_id,
                     'customer' => $cashSales->customer,
@@ -819,7 +934,7 @@ class PosCashSaleService
                         'requisition_date' => Carbon::now(),
                         'name' => $cashSales->customer,
                         'route_id' => $customer->route_id,
-                        'route' => $customer->route->route_name,
+                        'route' => $customer->route ? $customer->route->route_name : null,
                         'customer_id' => $customer->customer_id,
                         'wa_route_customer_id' => $cashSales->wa_route_customer_id,
                         'customer' => $cashSales->customer,

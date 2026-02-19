@@ -115,8 +115,8 @@
                     }
                 },
                 columns: [{
-                        data: 'created_at',
-                        name: 'created_at',
+                        data: 'trans_date',
+                        name: 'trans_date',
                         orderable: false,
                     },
                     {

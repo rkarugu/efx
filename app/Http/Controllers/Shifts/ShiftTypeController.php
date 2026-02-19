@@ -22,13 +22,13 @@ class ShiftTypeController extends Controller
                 [
                     'id' => 1,
                     'name' => 'onsite',
-                    'display_name' => 'On-Site',
+                    'display_name' => 'Onsite',
                 ],
-//                [
-//                    'id' => 2,
-//                    'name' => 'offsite',
-//                    'display_name' => 'Off-Site',
-//                ],
+                [
+                    'id' => 2,
+                    'name' => 'offsite',
+                    'display_name' => 'Offsite',
+                ],
             ];
         } catch (\Throwable $e) {
             $responseCode = 500;

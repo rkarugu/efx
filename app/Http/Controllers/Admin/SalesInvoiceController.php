@@ -63,9 +63,9 @@ class SalesInvoiceController extends Controller
                 'item_id' => 'array',
                 'item_quantity' => 'array',
                 'item_id.*' => 'required|exists:wa_inventory_items,id',
-                'item_quantity.*' => 'required|min:1|numeric',
+                'item_quantity.*' => 'required|min:0.1|numeric',
             ], [
-                'item_quantity.*.min' => 'Quantity must be greater than or equal to 1',
+                'item_quantity.*.min' => 'Quantity must be at least 0.1',
             ], [
                 'item_id.*' => 'Item',
                 'item_quantity.*' => 'Quantity',
@@ -96,6 +96,24 @@ class SalesInvoiceController extends Controller
 
             $currentShift = DB::table('salesman_shifts')->where('status', 'open')
                 ->where('route_id', $route->id)->first();
+            
+            // If no shift in salesman_shifts, check wa_shifts
+            if (!$currentShift) {
+                $waShift = DB::table('wa_shifts')->where('status', 'open')
+                    ->where('route', $route->route_name)
+                    ->where('salesman_id', $user->id)->first();
+                
+                if ($waShift) {
+                    // Create a temporary shift object for compatibility
+                    $currentShift = (object)[
+                        'id' => $waShift->id,
+                        'route_id' => $route->id,
+                        'status' => 'open',
+                        'shift_type' => 'onsite', // Default to onsite for wa_shifts
+                    ];
+                }
+            }
+            
             if (!$currentShift) {
                 return $this->jsonify(['result' => -1, 'message' => "Route $route->route_name does not have an open shift"], 422);
             }
@@ -136,9 +154,15 @@ class SalesInvoiceController extends Controller
             }
 
             $locationLog = null;
-            $salesmanLat = $request->latitude;
-            $salesmanLng = $request->longitude;
-            $distance = MappingService::getTheaterDistanceBetweenTwoPoints($salesmanLat, $salesmanLng, $routeCustomer->lat, $routeCustomer->lng);
+            $salesmanLat = $request->latitude ?? 0;
+            $salesmanLng = $request->longitude ?? 0;
+            
+            // Only calculate distance if both coordinates are valid
+            $distance = 0;
+            if ($salesmanLat && $salesmanLng && $routeCustomer->lat && $routeCustomer->lng) {
+                $distance = MappingService::getTheaterDistanceBetweenTwoPoints($salesmanLat, $salesmanLng, $routeCustomer->lat, $routeCustomer->lng);
+            }
+            
             $locationLog = OrderLocationLog::create([
                 'salesman_id' => $user->id,
                 'shop_id' => $routeCustomer->id,
@@ -162,7 +186,7 @@ class SalesInvoiceController extends Controller
 
             if ($currentShift->shift_type == 'offsite') {
                 $settings = getAllSettings();
-                if ($settings['CHECK_OFFSITE_DISTANCE'] == 1) {
+                if (isset($settings['CHECK_OFFSITE_DISTANCE']) && $settings['CHECK_OFFSITE_DISTANCE'] == 1) {
                     $firstOrder = WaInternalRequisition::where('wa_shift_id', $currentShift->id)->first();
                     if ($firstOrder && $firstOrder->shift_type == 'offsite') {
                         $offsiteDistance = MappingService::getTheaterDistanceBetweenTwoPoints($salesmanLat, $salesmanLng, $route->start_lat, $route->start_lng);
@@ -403,9 +427,9 @@ class SalesInvoiceController extends Controller
                 }
 
                 $sellingPriceToUse = $inventoryItem->selling_price;
-                $routePricing = RoutePricing::latest()->where('wa_inventory_item_id', $itemId)->where('status', 0)->whereRaw('FIND_IN_SET( ?  , route_id)', [$route->id])->first();
-                if (!empty($routePricing)) {
-                    $sellingPriceToUse = $routePricing->price;
+                $routePrice = RoutePricing::resolvePrice($itemId, $route->id, $route->restaurant_id ?? null);
+                if ($routePrice !== null) {
+                    $sellingPriceToUse = $routePrice;
                 }
 
                 $discount = 0;
@@ -458,7 +482,18 @@ class SalesInvoiceController extends Controller
                     'discount_description' => $discountDescription,
                 ]);
 
-                $promotion = ItemPromotion::where('inventory_item_id', $inventoryItem->id)->where('status', 'active')->whereNotNull('promotion_item_id')->first();
+                $promotion = ItemPromotion::where('inventory_item_id', $inventoryItem->id)
+                    ->where('status', 'active')
+                    ->whereNotNull('promotion_item_id')
+                    ->where(function ($query) {
+                        $today = \Carbon\Carbon::today();
+                        $query->where('from_date', '<=', $today)
+                            ->where(function ($subQuery) use ($today) {
+                                $subQuery->where('to_date', '>=', $today)
+                                         ->orWhereNull('to_date');
+                            });
+                    })
+                    ->first();
                 if ($promotion) {
                     $promotionBatches = floor($orderQty / (float)$promotion->sale_quantity);
                     if ($promotionBatches > 0) {
@@ -569,7 +604,7 @@ class SalesInvoiceController extends Controller
                             'standard_cost' => $promotionItem->standard_cost,
                             'selling_price' => 0,
                             'total_cost' => 0,
-                            'tax_manager_id' => $orderItem->tax_manager_id,
+                            'tax_manager_id' => $inventoryItem->tax_manager_id,
                             'vat_rate' => $vatRate,
                             'vat_amount' => 0,
                             'total_cost_with_vat' => (0),
@@ -691,5 +726,56 @@ class SalesInvoiceController extends Controller
 
         }
 
+    }
+
+    public function print(Request $request)
+    {
+        $slug = $request->slug;
+        $title = 'Sales Invoice Print';
+        $model = 'sales-invoice';
+        $breadcum = ['Sales Invoice' => route('sales-invoice.index'), 'Print' => ''];
+        $row = WaInternalRequisition::whereSlug($slug)->first();
+        $list = $row;
+        $itemsdata = WaInternalRequisitionItem::query()
+            ->select(
+                'wa_internal_requisition_items.*',
+                'wa_unit_of_measures.title as bin'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_internal_requisition_items.wa_inventory_item_id')
+            ->join('wa_inventory_location_uom', function ($join) use ($list) {
+                $join->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')
+                    ->where('wa_inventory_location_uom.location_id', $list->to_store_id);
+            })
+            ->join('wa_unit_of_measures', 'wa_inventory_location_uom.uom_id', '=', 'wa_unit_of_measures.id')
+            ->where('wa_internal_requisition_items.wa_internal_requisition_id', $list->id)
+            ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
+            ->get();
+        return view('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'row', 'list', 'itemsdata'));
+    }
+
+    public function exportToPdf($slug)
+    {
+        $title = 'Sales Invoice PDF';
+        $model = 'sales-invoice';
+        $breadcum = ['Sales Invoice' => route('sales-invoice.index'), 'PDF' => ''];
+        $list = WaInternalRequisition::whereSlug($slug)->first();
+        $itemsdata = WaInternalRequisitionItem::query()
+            ->select(
+                'wa_internal_requisition_items.*',
+                'wa_unit_of_measures.title as bin'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_internal_requisition_items.wa_inventory_item_id')
+            ->join('wa_inventory_location_uom', function ($join) use ($list) {
+                $join->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')
+                    ->where('wa_inventory_location_uom.location_id', $list->to_store_id);
+            })
+            ->join('wa_unit_of_measures', 'wa_inventory_location_uom.uom_id', '=', 'wa_unit_of_measures.id')
+            ->where('wa_internal_requisition_items.wa_internal_requisition_id', $list->id)
+            ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
+            ->get();
+
+        $pdf = \PDF::loadView('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'list', 'itemsdata'));
+        $report_name = 'sales_invoice_' . date('Y_m_d_H_i_A');
+        return $pdf->download($report_name . '.pdf');
     }
 }

@@ -28,9 +28,9 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class CustomerPaymentController extends Controller
 {
-    public function __construct(protected MpesaPaymentInterface $mpesaPaymentService, protected InfoSkySmsService $smsService)
-    {
-    }
+    // public function __construct(protected MpesaPaymentInterface $mpesaPaymentService, protected InfoSkySmsService $smsService)
+    // {
+    // }
 
     public function confirm(Request $request): JsonResponse
     {

@@ -21,6 +21,10 @@
                     </div>
                     <br>
 
+                    @php
+                        $selectedSalesman = request('salesman_id');
+                        $selectedShifts = (array) request('shift_id', []);
+                    @endphp
                     {!! Form::open(['route' => 'gross-profit.route-profitibility-report', 'method' => 'POST']) !!}
                     {{ csrf_field() }}
                     <div>
@@ -28,22 +32,24 @@
 
                             <div class="col-sm-3">
                                 <div class="form-group">
-                                    {!! Form::select('salesman_id', getAllsalesmanList(), null, [
+                                    {!! Form::select('salesman_id', getAllsalesmanList(), $selectedSalesman, [
                                         'placeholder' => 'Select Salesman',
                                         'class' => 'form-control mlselect getshiftdata',
                                         'required' => true,
                                     ]) !!}
+                                    <small class="text-muted">Choose a salesman to load their closed shifts.</small>
                                 </div>
                             </div>
 
                             <div class="col-sm-5">
                                 <div class="form-group">
-                                    {!! Form::select('shift_id[]', getAllShiftList(), null, [
-                                        'placeholder' => 'Select Shift',
-                                        'class' => 'form-control  mlselec6t shiftList',
-                                        'multiple' => 'multiple',
-                                        'required' => true,
-                                    ]) !!}
+                                    <select name="shift_id[]" class="form-control mlselec6t shiftList" multiple
+                                        required data-placeholder="Select Shift(s)" data-selected='@json($selectedShifts)'
+                                        @if (!$selectedSalesman) disabled @endif>
+                                        <option value="">{{ $selectedSalesman ? 'Loading shifts...' : 'Select a salesman first' }}
+                                        </option>
+                                    </select>
+                                    <small class="text-muted">Hold Ctrl/Cmd to select multiple shifts.</small>
                                 </div>
                             </div>
 
@@ -139,37 +145,85 @@
     <script src="{{ asset('assets/admin/bower_components/select2/dist/js/select2.full.min.js') }}"></script>
     <script type="text/javascript">
         $(function() {
-
-            $(".mlselect").select2();
+            $(".mlselect").select2({ width: '100%' });
         });
+
         $(document).ready(function() {
-            $(".getshiftdata").change(function() {
-                var salesmanId = $(this).val();
+            const $salesman = $('.getshiftdata');
+            const $shiftList = $('.shiftList');
+            const initiallySelected = $shiftList.data('selected') || [];
+            const select2Config = { closeOnSelect: false, width: '100%' };
+
+            function initialiseSelect2() {
+                if ($shiftList.hasClass('select2-hidden-accessible')) {
+                    $shiftList.select2('destroy');
+                }
+                $shiftList.select2(select2Config);
+            }
+
+            function renderOptions(options, selectedValues = []) {
+                $shiftList.empty();
+
+                if (!options.length) {
+                    $shiftList.append('<option value="">No closed shifts found for this salesman</option>');
+                    $shiftList.prop('disabled', true);
+                } else {
+                    options.forEach(function(option) {
+                        const isSelected = selectedValues.includes(option.value);
+                        $shiftList.append(`<option value="${option.value}" ${isSelected ? 'selected' : ''}>${option.label}</option>`);
+                    });
+                    $shiftList.prop('disabled', false);
+                }
+
+                initialiseSelect2();
+            }
+
+            function fetchShifts(salesmanId, selectedValues = []) {
+                if (!salesmanId) {
+                    $shiftList.prop('disabled', true)
+                        .html('<option value="">Select a salesman first</option>');
+                    initialiseSelect2();
+                    return;
+                }
+
                 $.ajax({
-                    url: "{{ route('sales-and-receivables-reports.getShiftBySalesman') }}",
-                    dataType: "JSON",
+                    url: "{{ route('gross-profit.get-salesman-shifts') }}",
+                    type: "GET",
+                    dataType: "json",
                     data: {
                         '_token': "{{ csrf_token() }}",
-                        salesman_id: salesmanId,
-                        'shift_summary': '1'
+                        salesman_id: salesmanId
+                    },
+                    beforeSend: function() {
+                        $shiftList.prop('disabled', true)
+                            .html('<option value="">Loading shifts...</option>');
+                        initialiseSelect2();
                     },
                     success: function(result) {
-                        $('.shiftList').html('');
-                        $.each(result, function(key, val) {
-                            $('.shiftList').append('<option value="' + key + '">' +
-                                val + '</option>');
+                        const options = Object.entries(result).map(function([value, label]) {
+                            return { value, label };
                         });
-                        //			$("#div1").html(result);
+                        renderOptions(options, selectedValues);
+                    },
+                    error: function() {
+                        $shiftList.prop('disabled', true)
+                            .html('<option value="">Error loading shifts</option>');
+                        initialiseSelect2();
                     }
                 });
-            });
-        });
+            }
 
-        $(function() {
-            $(".mlselec6t").select2({
-                closeOnSelect: false,
+            $salesman.on('change', function() {
+                const salesmanId = $(this).val();
+                fetchShifts(salesmanId, []);
             });
-            //        $(".mlselec6t").select2();
+
+            initialiseSelect2();
+
+            const preselectedSalesman = $salesman.val();
+            if (preselectedSalesman) {
+                fetchShifts(preselectedSalesman, initiallySelected);
+            }
         });
     </script>
 

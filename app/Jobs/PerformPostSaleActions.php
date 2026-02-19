@@ -175,6 +175,7 @@ class PerformPostSaleActions implements ShouldQueue
         $debtorTran->salesman_id = $this->internalRequisition->to_store_id;
         $debtorTran->customer_number = WaCustomer::find($this->internalRequisition->customer_id)->customer_code;
         $debtorTran->trans_date = $this->internalRequisition->requisition_date;
+        $debtorTran->input_date = now()->format('Y-m-d H:i:s');
         $debtorTran->wa_accounting_period_id = $accountingPeriod ? $accountingPeriod->id : null;
         $debtorTran->amount = $this->internalRequisition->getOrderTotalWithoutDiscount();
         $debtorTran->document_no = $this->internalRequisition->requisition_no;
@@ -192,6 +193,7 @@ class PerformPostSaleActions implements ShouldQueue
             $discountTran->salesman_id = $this->internalRequisition->to_store_id;
             $discountTran->customer_number = WaCustomer::find($this->internalRequisition->customer_id)->customer_code;
             $discountTran->trans_date = $this->internalRequisition->requisition_date;
+            $discountTran->input_date = now()->format('Y-m-d H:i:s');
             $discountTran->wa_accounting_period_id = $accountingPeriod ? $accountingPeriod->id : null;
             $discountTran->amount = ($this->internalRequisition->getTotalDiscount()) * -1;
             $discountTran->document_no = $this->internalRequisition->requisition_no;

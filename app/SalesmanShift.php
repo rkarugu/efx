@@ -203,4 +203,17 @@ class SalesmanShift extends Model
     {
         return $this->hasOne(WaInternalRequisition::class, 'wa_shift_id', 'id')->oldest();
     }
+
+    /**
+     * Get all delivery schedules this shift is assigned to (many-to-many)
+     */
+    public function deliverySchedules(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            \App\DeliverySchedule::class,
+            'delivery_schedule_shifts',
+            'salesman_shift_id',
+            'delivery_schedule_id'
+        )->withTimestamps();
+    }
 }

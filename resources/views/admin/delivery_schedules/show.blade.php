@@ -156,7 +156,7 @@
                                         <td> @{{ item.customer }} </td>
                                         <td> @{{ item.order_no }} </td>
                                         <td> @{{ item.delivered ? 'Delivered' : 'Pending' }} </td>
-                                        <td> @{{ item.delivered ? item.delivery_date : '-' }} </td>
+                                        <td> @{{ item.delivery_time || '-' }} </td>
                                         <td style="text-align: right;"> @{{ item.total }} </td>
                                     </tr>
                                 </tbody>

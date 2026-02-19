@@ -1,5 +1,11 @@
 <?php
 
+// Include debug promotion routes
+require __DIR__.'/debug_promotion.php';
+require __DIR__.'/debug_all_promotions.php';
+require __DIR__.'/test_promotion_service.php';
+require __DIR__.'/debug_promotion_logic.php';
+
 /*
   |--------------------------------------------------------------------------
   | Web Routes
@@ -147,6 +153,8 @@ use App\Http\Controllers\Admin\UpdateStandardCostController;
 use App\Http\Controllers\GrnsAgainstInvoicesReportController;
 use App\Http\Controllers\DetailedSalesSummaryReportController;
 use App\Http\Controllers\Admin\TicketController;
+use App\Http\Controllers\Admin\SalesmanOrderController;
+use App\Http\Controllers\Admin\SalesmanCustomerController;
 use App\Http\Controllers\Admin\TicketCategoryController;
 use App\Http\Controllers\Admin\HelpDeskSupportController;
 use App\Http\Controllers\Admin\ItemMarginProcessingController;
@@ -212,6 +220,9 @@ Route::group(['prefix' => 'admin', 'namespace' => 'Admin', 'middleware' => ['ip-
     Route::GET('trade-agreement/download-trade-agreement/{reference}', 'TradeAgreementController@get_document_trade_reference');
     Route::get('grn-download/{slug}', 'CompletedGrnController@download_grn')->name('completed-grn.download_grn');
 });
+
+// Public route for mobile app invoice download
+Route::get('/api/get-sales-order-receipt', [\App\Http\Controllers\Api\SalesOrdersController::class, 'getSalesOrderReceipt'])->name('api.invoice.download');
 
 Route::group(['prefix' => 'admin', 'namespace' => 'Admin', 'middleware' => ['AdminLoggedIn', 'ip-blocker']], function () {
 
@@ -1271,9 +1282,408 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
     Route::get('sales-and-receivables-reports/invoice-balancing-report', 'InvoiceBalancingReportController@index')->name('sales-and-receivables-reports.invoice-balancing-report');
 
     Route::get('salesman-shifts', [SalesManShiftController::class, 'salesmanShift'])->name('salesman-shifts.index');
+    Route::get('salesman-shift/{id}', [SalesManShiftController::class, 'salesmanShiftDetails'])->name('salesman-shift-details');
+    Route::get('salesman-shifts/{id}/delivery-report', [SalesManShiftController::class, 'deliveryReport'])->name('salesman-shifts.delivery-report');
+    Route::get('salesman-shifts/{id}/delivery-sheet', [SalesManShiftController::class, 'deliverySheet'])->name('salesman-shifts.delivery-sheet');
+    Route::get('salesman-shifts/{id}/loading-sheet', [SalesManShiftController::class, 'loadingSheet'])->name('salesman-shifts.loading-sheet');
+    Route::get('salesman-shifts/{id}/reopen-from-back-end', [SalesManShiftController::class, 'reopenShiftFromBackend'])->name('salesman-shifts.reopen-from-back-end');
+    
+    // List all routes to find Thika CBD
+    Route::get('list-all-routes', function() {
+        $user = Auth::user();
+        
+        echo "<h3>All Routes in System</h3>";
+        echo "<p>Current User: {$user->name} (Restaurant: {$user->restaurant_id})</p>";
+        
+        // Get all routes
+        $allRoutes = \App\Model\Route::with('restaurant')->get();
+        
+        echo "<h4>All Routes ({$allRoutes->count()}):</h4>";
+        echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
+        echo "<tr><th>ID</th><th>Route Name</th><th>Restaurant ID</th><th>Restaurant Name</th><th>Order Taking Days</th><th>Status</th></tr>";
+        
+        foreach($allRoutes as $route) {
+            $restaurantName = $route->restaurant ? $route->restaurant->name : 'N/A';
+            echo "<tr>";
+            echo "<td>{$route->id}</td>";
+            echo "<td>{$route->route_name}</td>";
+            echo "<td>{$route->restaurant_id}</td>";
+            echo "<td>{$restaurantName}</td>";
+            echo "<td>{$route->order_taking_days}</td>";
+            echo "<td>" . ($route->status ?? 'N/A') . "</td>";
+            echo "</tr>";
+        }
+        echo "</table>";
+        
+        // Check today's day
+        $today = \Carbon\Carbon::now();
+        $dayOfWeek = $today->dayOfWeek; // 0 = Sunday, 1 = Monday, etc.
+        $dayName = $today->format('l'); // Full day name
+        
+        echo "<h4>Today's Information:</h4>";
+        echo "<p>Today is: {$dayName} (Day {$dayOfWeek})</p>";
+        
+        // Find routes that should be active today
+        echo "<h4>Routes Active Today:</h4>";
+        $activeToday = \App\Model\Route::where('order_taking_days', 'LIKE', "%{$dayOfWeek}%")
+            ->orWhere('order_taking_days', 'LIKE', "%{$dayName}%")
+            ->with('restaurant')
+            ->get();
+            
+        if($activeToday->count() > 0) {
+            echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
+            echo "<tr><th>ID</th><th>Route Name</th><th>Restaurant</th><th>Order Taking Days</th></tr>";
+            foreach($activeToday as $route) {
+                $restaurantName = $route->restaurant ? $route->restaurant->name : 'N/A';
+                echo "<tr>";
+                echo "<td>{$route->id}</td>";
+                echo "<td>{$route->route_name}</td>";
+                echo "<td>{$restaurantName}</td>";
+                echo "<td>{$route->order_taking_days}</td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+        } else {
+            echo "<p>No routes found for today.</p>";
+        }
+        
+        return '';
+    });
+    
+    // Check Thika CBD schedule
+    Route::get('check-thika-schedule', function() {
+        $today = \Carbon\Carbon::now()->toDateString();
+        $user = Auth::user();
+        
+        echo "<h3>Thika CBD Schedule Check - Today: $today</h3>";
+        echo "<p>Current User: {$user->name} (ID: {$user->id}, Restaurant: {$user->restaurant_id})</p>";
+        
+        // Check user permissions
+        $isAdmin = $user->role_id == 1;
+        $branchIds = DB::table('user_branches')->where('user_id', $user->id)->pluck('restaurant_id')->toArray();
+        
+        echo "<p>Is Admin: " . ($isAdmin ? 'Yes' : 'No') . "</p>";
+        echo "<p>Role ID: {$user->role_id}</p>";
+        echo "<p>Branch Access: " . implode(', ', $branchIds) . "</p>";
+        
+        // Test the same logic as the controller
+        $hasGlobalAccess = $isAdmin || 
+                          $user->role_id == 1 || 
+                          strtolower($user->name) == 'demo admin' ||
+                          !empty($branchIds);
+        echo "<p>Has Global Access: " . ($hasGlobalAccess ? 'YES' : 'NO') . "</p>";
+        
+        // Find Thika CBD route
+        $thikaRoute = \App\Model\Route::where('route_name', 'LIKE', '%thika%')
+            ->orWhere('route_name', 'LIKE', '%CBD%')
+            ->get();
+            
+        echo "<h4>Routes matching 'Thika' or 'CBD':</h4>";
+        foreach($thikaRoute as $route) {
+            echo "<p>Route ID: {$route->id}, Name: {$route->route_name}, Restaurant: {$route->restaurant_id}</p>";
+        }
+        
+        // Check if there are shifts for these routes today
+        if($thikaRoute->count() > 0) {
+            $routeIds = $thikaRoute->pluck('id')->toArray();
+            $todayShifts = \App\SalesmanShift::whereIn('route_id', $routeIds)
+                ->whereDate('created_at', $today)
+                ->with('relatedRoute', 'salesman')
+                ->get();
+                
+            echo "<h4>Shifts for Thika/CBD routes today:</h4>";
+            if($todayShifts->count() > 0) {
+                foreach($todayShifts as $shift) {
+                    $routeName = $shift->relatedRoute ? $shift->relatedRoute->route_name : 'N/A';
+                    $salesmanName = $shift->salesman ? $shift->salesman->name : 'N/A';
+                    echo "<p>Shift ID: {$shift->id}, Route: {$routeName}, Salesman: {$salesmanName}, Status: {$shift->status}, Created: {$shift->created_at}</p>";
+                }
+            } else {
+                echo "<p>No shifts found for Thika/CBD routes today.</p>";
+            }
+        }
+        
+        // Check all shifts today regardless of route
+        $allTodayShifts = \App\SalesmanShift::whereDate('created_at', $today)
+            ->with('relatedRoute', 'salesman')
+            ->get();
+            
+        echo "<h4>All shifts today ({$allTodayShifts->count()}):</h4>";
+        foreach($allTodayShifts as $shift) {
+            $routeName = $shift->relatedRoute ? $shift->relatedRoute->route_name : 'N/A';
+            $salesmanName = $shift->salesman ? $shift->salesman->name : 'N/A';
+            echo "<p>Shift ID: {$shift->id}, Route: {$routeName}, Salesman: {$salesmanName}, Status: {$shift->status}, Created: {$shift->created_at}</p>";
+        }
+        
+        return '';
+    });
+    
+    // Fix Test Salesman route assignment
+    Route::get('fix-test-salesman-route', function() {
+        echo "<h3>Fix Test Salesman Route Assignment</h3>";
+        
+        // Find Test Salesman user
+        $user = \App\Model\User::where('name', 'Test Salesman')->first();
+        if (!$user) {
+            echo "<p>Test Salesman user not found!</p>";
+            return '';
+        }
+        
+        echo "<p>Found user: {$user->name} (ID: {$user->id})</p>";
+        
+        // Find Thika Town CBD route
+        $route = \App\Model\Route::where('route_name', 'Thika Town CBD')->first();
+        if (!$route) {
+            echo "<p>Thika Town CBD route not found!</p>";
+            return '';
+        }
+        
+        echo "<p>Found route: {$route->route_name} (ID: {$route->id})</p>";
+        
+        // Check if already assigned
+        $isAssigned = $user->routes()->where('route_id', $route->id)->exists();
+        if ($isAssigned) {
+            echo "<p>✅ Route is already assigned to user!</p>";
+        } else {
+            // Assign the route
+            $user->routes()->attach($route->id);
+            echo "<p>✅ Route has been assigned to Test Salesman!</p>";
+        }
+        
+        // Also update the user's direct route field if it exists
+        if (isset($user->route)) {
+            $user->route = $route->id;
+            $user->save();
+            echo "<p>✅ Updated user's direct route field!</p>";
+        }
+        
+        return '';
+    });
+    
+    // Debug order item relationships
+    Route::get('debug-order-item/{orderId}', function($orderId) {
+        echo "<h3>Debug Order Item Relationships - Order ID: {$orderId}</h3>";
+        
+        $order = \App\Model\WaInternalRequisition::with([
+            'getRelatedItem.getInventoryItemDetail.unitofmeasures'
+        ])->find($orderId);
+        
+        if (!$order) {
+            echo "<p>Order not found!</p>";
+            return '';
+        }
+        
+        echo "<p>Order: {$order->requisition_no}</p>";
+        echo "<p>Items count: {$order->getRelatedItem->count()}</p>";
+        
+        foreach ($order->getRelatedItem as $index => $item) {
+            echo "<h4>Item " . ($index + 1) . ":</h4>";
+            echo "<p>Item ID: {$item->id}</p>";
+            echo "<p>Inventory Item ID: {$item->wa_inventory_item_id}</p>";
+            echo "<p>Quantity: {$item->quantity}</p>";
+            echo "<p>Selling Price: {$item->selling_price}</p>";
+            echo "<p>Discount: {$item->discount}</p>";
+            echo "<p>Total Cost with VAT: {$item->total_cost_with_vat}</p>";
+            
+            if ($item->getInventoryItemDetail) {
+                echo "<p>✅ Inventory Item Found: {$item->getInventoryItemDetail->title}</p>";
+                echo "<p>Unit of Measure ID: {$item->getInventoryItemDetail->wa_unit_of_measure_id}</p>";
+                
+                if ($item->getInventoryItemDetail->unitofmeasures) {
+                    echo "<p>✅ Unit of Measure Found: {$item->getInventoryItemDetail->unitofmeasures->title}</p>";
+                } else {
+                    echo "<p>❌ Unit of Measure NOT FOUND</p>";
+                    
+                    // Try to find the unit directly
+                    $unit = \App\Model\WaUnitOfMeasure::find($item->getInventoryItemDetail->wa_unit_of_measure_id);
+                    if ($unit) {
+                        echo "<p>🔍 Direct Unit Query Found: {$unit->title}</p>";
+                    } else {
+                        echo "<p>🔍 Direct Unit Query: NOT FOUND</p>";
+                    }
+                }
+            } else {
+                echo "<p>❌ Inventory Item NOT FOUND</p>";
+            }
+            
+            echo "<hr>";
+        }
+        
+        return '';
+    });
+    
+    // Debug routes by branch
+    Route::get('debug-routes-by-branch/{branchId}', function($branchId) {
+        echo "<h3>Debug Routes for Branch ID: {$branchId}</h3>";
+        
+        // Get branch info
+        $branch = \App\Model\Restaurant::find($branchId);
+        if (!$branch) {
+            echo "<p>Branch not found!</p>";
+            return '';
+        }
+        
+        echo "<p>Branch: {$branch->restaurant_name} (ID: {$branch->id})</p>";
+        
+        // Get all routes for this branch
+        $routes = \App\Model\Route::where('restaurant_id', $branchId)->get();
+        
+        echo "<h4>All Routes for this Branch ({$routes->count()}):</h4>";
+        if ($routes->count() > 0) {
+            echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
+            echo "<tr><th>Route ID</th><th>Route Name</th><th>Physical Route</th><th>Has Salesman</th><th>Has Route Manager</th><th>Status</th></tr>";
+            
+            foreach ($routes as $route) {
+                echo "<tr>";
+                echo "<td>{$route->id}</td>";
+                echo "<td>{$route->route_name}</td>";
+                echo "<td>" . ($route->is_physical_route ? 'Yes' : 'No') . "</td>";
+                echo "<td>" . ($route->has_salesman ? 'Yes' : 'No') . "</td>";
+                echo "<td>" . ($route->has_route_manager ? 'Yes' : 'No') . "</td>";
+                echo "<td>" . ($route->status ?? 'N/A') . "</td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+            
+            // Check which routes are available for salesman role (role_id = 4)
+            echo "<h4>Routes Available for Salesman Role:</h4>";
+            $availableRoutes = $routes->filter(function($route) {
+                return $route->is_physical_route && !$route->has_salesman;
+            });
+            
+            if ($availableRoutes->count() > 0) {
+                echo "<ul>";
+                foreach ($availableRoutes as $route) {
+                    echo "<li>{$route->route_name} (ID: {$route->id})</li>";
+                }
+                echo "</ul>";
+            } else {
+                echo "<p><strong>No routes available for new salesman assignment.</strong></p>";
+                echo "<p>Reasons a route might not be available:</p>";
+                echo "<ul>";
+                echo "<li>Route already has a salesman assigned (has_salesman = 1)</li>";
+                echo "<li>Route is not marked as physical route (is_physical_route = 0)</li>";
+                echo "<li>Route is inactive</li>";
+                echo "</ul>";
+            }
+        } else {
+            echo "<p>No routes found for this branch.</p>";
+        }
+        
+        return '';
+    });
+    
+    // Debug shift orders
+    Route::get('debug-shift-orders/{shiftId}', function($shiftId) {
+        echo "<h3>Debug Shift Orders - Shift ID: {$shiftId}</h3>";
+        
+        // Get shift details
+        $shift = \App\SalesmanShift::with(['salesman', 'relatedRoute'])->find($shiftId);
+        if (!$shift) {
+            echo "<p>Shift not found!</p>";
+            return '';
+        }
+        
+        echo "<p>Shift: {$shift->id}, Route: {$shift->relatedRoute->route_name}, Salesman: {$shift->salesman->name}</p>";
+        echo "<p>Status: {$shift->status}, Created: {$shift->created_at}</p>";
+        
+        // Get orders for this shift
+        $orders = \App\Model\WaInternalRequisition::with(['getRelatedItem', 'getRouteCustomer'])
+            ->where('wa_shift_id', $shiftId)
+            ->get();
+            
+        echo "<h4>Orders for this shift ({$orders->count()}):</h4>";
+        if ($orders->count() > 0) {
+            echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
+            echo "<tr><th>Order ID</th><th>Requisition No</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Created</th></tr>";
+            
+            foreach ($orders as $order) {
+                $itemCount = $order->getRelatedItem->count();
+                $total = $order->getOrderTotal();
+                $customerName = $order->getRouteCustomer ? $order->getRouteCustomer->name : 'N/A';
+                
+                echo "<tr>";
+                echo "<td>{$order->id}</td>";
+                echo "<td>{$order->requisition_no}</td>";
+                echo "<td>{$customerName}</td>";
+                echo "<td>{$itemCount}</td>";
+                echo "<td>" . number_format($total, 2) . "</td>";
+                echo "<td>{$order->status}</td>";
+                echo "<td>{$order->created_at}</td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+            
+            // Show order items details
+            echo "<h4>Order Items Details:</h4>";
+            foreach ($orders as $order) {
+                echo "<h5>Order: {$order->requisition_no}</h5>";
+                echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
+                echo "<tr><th>Item</th><th>Quantity</th><th>Price</th><th>Total</th></tr>";
+                
+                foreach ($order->getRelatedItem as $item) {
+                    $inventoryItem = \App\Model\WaInventoryItem::find($item->wa_inventory_item_id);
+                    $itemName = $inventoryItem ? $inventoryItem->title : 'Unknown Item';
+                    
+                    echo "<tr>";
+                    echo "<td>{$itemName}</td>";
+                    echo "<td>{$item->quantity}</td>";
+                    echo "<td>" . number_format($item->selling_price, 2) . "</td>";
+                    echo "<td>" . number_format($item->total_cost_with_vat, 2) . "</td>";
+                    echo "</tr>";
+                }
+                echo "</table><br>";
+            }
+        } else {
+            echo "<p>No orders found for this shift.</p>";
+        }
+        
+        return '';
+    });
+    
+    // Debug route for salesman shifts
+    Route::get('debug-salesman-shifts', function() {
+        $today = \Carbon\Carbon::now()->toDateString();
+        $user = Auth::user();
+        
+        echo "<h3>Debug Salesman Shifts - Today: $today</h3>";
+        echo "<p>Current User: {$user->name} (ID: {$user->id}, Restaurant: {$user->restaurant_id})</p>";
+        
+        // Check total shifts
+        $totalShifts = \App\SalesmanShift::count();
+        echo "<p>Total shifts in database: $totalShifts</p>";
+        
+        // Check shifts today
+        $todayShifts = \App\SalesmanShift::whereDate('created_at', $today)->count();
+        echo "<p>Shifts created today: $todayShifts</p>";
+        
+        // Check shifts for user's restaurant
+        $restaurantShifts = \App\SalesmanShift::join('routes', 'salesman_shifts.route_id', '=', 'routes.id')
+            ->where('routes.restaurant_id', $user->restaurant_id)
+            ->whereDate('salesman_shifts.created_at', $today)
+            ->count();
+        echo "<p>Shifts for user's restaurant today: $restaurantShifts</p>";
+        
+        // Show recent shifts
+        $recentShifts = \App\SalesmanShift::with('relatedRoute')
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+            
+        echo "<h4>Recent Shifts:</h4>";
+        foreach($recentShifts as $shift) {
+            $routeName = $shift->relatedRoute ? $shift->relatedRoute->route_name : 'N/A';
+            $restaurantId = $shift->relatedRoute ? $shift->relatedRoute->restaurant_id : 'N/A';
+            echo "<p>ID: {$shift->id}, Route: {$routeName} (Restaurant: {$restaurantId}), Status: {$shift->status}, Created: {$shift->created_at}</p>";
+        }
+        
+        return '';
+    });
     Route::get('salesman-shifts/{id}/delivery-report', [SalesManShiftController::class, 'downloadDeliveryReport'])->name('salesman-shifts.delivery-report');
     Route::get('salesman-shifts/{id}/delivery-sheet', [SalesManShiftController::class, 'downloadDeliverySheet'])->name('salesman-shifts.delivery-sheet');
     Route::get('salesman-shifts/{id}/loading-sheet', [SalesManShiftController::class, 'downloadLoadingSheet'])->name('salesman-shifts.loading-sheet');
+    Route::get('salesman-shifts/{id}/debug-balance', [SalesManShiftController::class, 'debugInvoiceBalance'])->name('salesman-shifts.debug-balance');
+    Route::post('salesman-shifts/{id}/fix-balance', [SalesManShiftController::class, 'fixInvoiceBalance'])->name('salesman-shifts.fix-balance');
     Route::get('salesman-shifts/{id}/reopen-from-back-end', [SalesManShiftController::class, 'reopenShiftBe'])->name('salesman-shifts.reopen-shift-from-be');
 
 
@@ -1476,10 +1886,10 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
 
     Route::resource('vehicletype', 'VehicleTypeController');
     Route::resource('make', 'MakeController');
-    Route::resource('model', 'ModelController');
+    // Route::resource('model', 'ModelController'); // Commented out - ModelController does not exist
     Route::resource('bodytype', 'BodyTypeController');
     Route::resource('expensetype', 'ExpenseTypeController');
-    Route::resource('vehicleassignment', 'VehicleAssignmentController');
+    // Route::resource('vehicleassignment', 'VehicleAssignmentController'); // Commented out - VehicleAssignmentController does not exist
 
     Route::resource('tyre_fitting', 'TyreFittingController');
     Route::any('tyre_fitting/search', 'TyreFittingController@tyre_search')->name('tyre_fitting.search');
@@ -1494,10 +1904,10 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
 
     Route::resource('fuelentry', 'FuelEntryController');
     Route::resource('expensehistory', 'ExpenseHistoryController');
-    Route::resource('meterhistory', 'MeterHistoryController');
+    // Route::resource('meterhistory', 'MeterHistoryController'); // Commented out - MeterHistoryController does not exist
     Route::resource('issues', 'IssuesController');
 
-    Route::any('odometer_reading_history/{id}', 'MeterHistoryController@odometer_reading_history')->name('meterhistory.odometer_reading_history');
+    // Route::any('odometer_reading_history/{id}', 'MeterHistoryController@odometer_reading_history')->name('meterhistory.odometer_reading_history'); // Commented out - MeterHistoryController does not exist
 
     Route::GET('servicehistory/issues', 'ServiceHistoryController@getissues')->name('servicehistory.issues');
     Route::GET('servicehistory/servicetask', 'ServiceHistoryController@Addtask')->name('servicehistory.servicetask');
@@ -1549,7 +1959,7 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
     Route::GET('vehicle-lists', 'ExpenseHistoryController@vehicle_list')->name('vehicle.lists');
     Route::GET('vendor-lists', 'ExpenseHistoryController@WaSupplier')->name('vendor.lists');
 
-    Route::GET('vehicle-type', 'MeterHistoryController@vehicle_list')->name('vehicle.types');
+    // Route::GET('vehicle-type', 'MeterHistoryController@vehicle_list')->name('vehicle.types'); // Commented out - MeterHistoryController does not exist
 
     Route::GET('vehicle-lists', 'IssuesController@vehicle_list')->name('vehicle.lists');
     Route::GET('user-list', 'IssuesController@User')->name('user.list');
@@ -1569,9 +1979,9 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
 
     Route::get('stock-takes/getCategories', 'ServiceHistoryController@getCategories')->name('admin.servicehistory.create');
     // Route::get('vehicle-listing/sheet', 'VehicleListingController@index')->name('vehicle-listing.index');
-    Route::resource('vehiclelisting', 'VehicleListingController');
-    Route::get('exportpdflisting/', 'VehicleListingController@createPDF')->name('exportpdflisting');
-    Route::get('/pdf', 'VehicleListingController@pdfview');
+    // Route::resource('vehiclelisting', 'VehicleListingController'); // Commented out - VehicleListingController does not exist
+    // Route::get('exportpdflisting/', 'VehicleListingController@createPDF')->name('exportpdflisting'); // Commented out - VehicleListingController does not exist
+    // Route::get('/pdf', 'VehicleListingController@pdfview'); // Commented out - VehicleListingController does not exist
 
     Route::resource('operatingcostsummary', 'OperatingCostController');
     Route::get('exportpdfoperatingassigemet/', 'OperatingCostController@createPDF')->name('exportpdfoperatingassigemet');
@@ -1758,6 +2168,7 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
     Route::post('payment-vouchers/{voucher}/decline', 'PaymentVoucherController@decline')->name('payment-vouchers.decline');
     Route::post('payment-vouchers/{voucher}/confirm', 'PaymentVoucherController@confirm')->name('payment-vouchers.confirm');
     Route::get('payment-vouchers-report', 'PaymentVouchersReportController@index')->name('payment-vouchers-report.index');
+    Route::get('payment-vouchers-approved-pending-report', 'PaymentVouchersReportController@approvedPendingReport')->name('payment-vouchers.approved.pending.report');
 
     Route::get('payment-vouchers/create/{code}', 'PaymentVoucherController@create')->name('maintain-suppliers.payment_vouchers.create');
     Route::post('payment-vouchers/{code}', 'PaymentVoucherController@store')->name('maintain-suppliers.payment_vouchers.store');
@@ -2196,6 +2607,9 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
     Route::post('stock-takes/print', 'StockTakesController@printPage')->name('admin.stock-takes.print');
 
     Route::get('stock-counts', 'StockCountsController@index')->name('admin.stock-counts');
+    Route::get('stock-counts/mobile-web', 'StockCountsController@mobileWeb')->name('admin.stock-counts.mobile-web');
+    Route::get('stock-counts/mobile-web/get-items', 'StockCountsController@getMobileWebItems')->name('admin.stock-counts.mobile-web.get-items');
+    Route::post('stock-counts/mobile-web/submit', 'StockCountsController@submitMobileWebCounts')->name('admin.stock-counts.mobile-web.submit');
     Route::delete('stock-counts/destroy/{id}', 'StockCountsController@destroy')->name('admin.stock-counts.destroy');
     Route::get('stock-counts/enter-stock-counts', 'StockCountsController@enterStockCounts')->name('admin.stock-counts.enter-stock-counts');
     Route::post('stock-counts/enter-stock-counts-form-list', 'StockCountsController@stockCountFormListAjax')->name('admin.stock-counts.enter-stock-counts-form-list');
@@ -2365,6 +2779,27 @@ Route::any('/admin/pos/route-customer/store', [CustomerController::class, 'store
     Route::post('gross-profit/inventory-valuation-detailed-report', 'GrossProfitReportController@inventoryValuationDetailedReport')->name('gross-profit.inventory-valuation-detailed-report');
     Route::get('gross-profit/route-profitibility-report', 'GrossProfitReportController@routeProfitibilityReport')->name('gross-profit.route-profitibility-report');
     Route::post('gross-profit/route-profitibility-report', 'GrossProfitReportController@routeProfitibilityReport')->name('gross-profit.route-profitibility-report');
+    Route::get('gross-profit/get-salesman-shifts', 'GrossProfitReportController@getSalesmanShifts')->name('gross-profit.get-salesman-shifts');
+
+    // Delivery Driver Routes
+Route::group(['prefix' => 'delivery-driver', 'as' => 'delivery-driver.', 'middleware' => 'delivery-driver'], function () {
+    Route::get('dashboard', 'DeliveryDriverController@dashboard')->name('dashboard');
+    Route::get('mobile', 'DeliveryDriverController@mobileApp')->name('mobile');
+    Route::get('schedule/{id}', 'DeliveryDriverController@showSchedule')->name('schedule.show');
+    Route::post('schedule/{id}/start', 'DeliveryDriverController@startDelivery')->name('schedule.start');
+    Route::post('schedule/{id}/complete', 'DeliveryDriverController@completeSchedule')->name('schedule.complete');
+    Route::post('receive-items', 'DeliveryDriverController@receiveItems')->name('receive-items');
+    Route::get('get-customer-items', 'DeliveryDriverController@getCustomerItems')->name('get-customer-items');
+    Route::post('prompt-delivery', 'DeliveryDriverController@promptDeliveryCompletion')->name('prompt-delivery');
+    Route::post('verify-code', 'DeliveryDriverController@verifyDeliveryCode')->name('verify-code');
+    Route::get('get-delivery-codes', 'DeliveryDriverController@getDeliveryCodes')->name('get-delivery-codes');
+    Route::post('complete-delivery-direct', 'DeliveryDriverController@completeDeliveryDirect')->name('complete-delivery-direct');
+    Route::get('get-payment-methods', 'DeliveryDriverController@getPaymentMethods')->name('get-payment-methods');
+    Route::post('record-payment', 'DeliveryDriverController@recordPayment')->name('record-payment');
+    Route::get('get-return-reasons', 'DeliveryDriverController@getReturnReasons')->name('get-return-reasons');
+    Route::post('process-returns', 'DeliveryDriverController@processReturns')->name('process-returns');
+    Route::get('history', 'DeliveryDriverController@history')->name('history');
+});
 
 
     Route::get('recipes/reports-summary', 'RecipesController@recipesSummary')->name('admin.recipes.report_summary');
@@ -2964,6 +3399,13 @@ Route::group(['prefix' => 'admin', 'middleware' => ['AdminLoggedIn', 'ip-blocker
     Route::get('initiate-gate-pass/{scheduleId}', [DeliveryScheduleController::class, 'initiateGatePass'])->name('gate-pass.downloadPdf');
     Route::get('split-schedule/{scheduleId}', [DeliverySplitController::class, 'splitSchedules'])->name('route.split-schedules');
     Route::post('split-schedule-insert', [DeliverySplitController::class, 'insertDeliverySplit'])->name('route.split-schedules-insert');
+    
+    // Multiple shifts management for delivery schedules
+    Route::get('delivery-schedules/{id}/shifts', [DeliveryScheduleController::class, 'getShifts'])->name('delivery-schedules.get-shifts');
+    Route::post('delivery-schedules/{id}/shifts', [DeliveryScheduleController::class, 'addShifts'])->name('delivery-schedules.add-shifts');
+    Route::delete('delivery-schedules/{id}/shifts/{shiftId}', [DeliveryScheduleController::class, 'removeShift'])->name('delivery-schedules.remove-shift');
+    Route::post('delivery-schedules/{id}/merge', [DeliveryScheduleController::class, 'mergeDeliverySchedules'])->name('delivery-schedules.merge');
+    Route::post('delivery-schedules/{id}/unmerge/{shiftId}', [DeliveryScheduleController::class, 'unmergeShift'])->name('delivery-schedules.unmerge');
 
 
 
@@ -3006,6 +3448,74 @@ Route::group(['prefix' => 'admin', 'middleware' => ['AdminLoggedIn', 'ip-blocker
     Route::get('/suggested-order', [SuggestedOrderController::class, 'index'])->name('suggested-order.index');
     Route::get('/suggested-order/{id}', [SuggestedOrderController::class, 'show'])->name('suggested-order.show');
     Route::PUT('/suggested-order/{id}', [SuggestedOrderController::class, 'update'])->name('suggested-order.update');
+
+    // Salesman Order Taking Routes
+    Route::group(['prefix' => 'salesman-orders', 'as' => 'salesman-orders.'], function () {
+        Route::get('/', [SalesmanOrderController::class, 'index'])->name('index');
+        Route::get('/create', [SalesmanOrderController::class, 'create'])->name('create');
+        Route::post('/store', [SalesmanOrderController::class, 'store'])->name('store');
+        Route::get('/ajax/route-customers', [SalesmanOrderController::class, 'getRouteCustomers'])->name('ajax.route-customers');
+        Route::get('/ajax/search-customers', [SalesmanOrderController::class, 'searchCustomers'])->name('search-customers');
+        Route::get('/ajax/item-details', [SalesmanOrderController::class, 'getItemDetails'])->name('ajax.item-details');
+        Route::get('/search-inventory', [SalesmanOrderController::class, 'searchInventory'])->name('search-inventory');
+        Route::get('/get-item-details', [SalesmanOrderController::class, 'getItemDetails'])->name('get-item-details');
+        Route::get('/calculate-discount', [SalesmanOrderController::class, 'calculateItemDiscount'])->name('calculate-discount');
+        Route::get('/test-discount/{itemId}/{quantity}', [SalesmanOrderController::class, 'testDiscount'])->name('test-discount');
+        Route::get('/test-search', [SalesmanOrderController::class, 'testSearch'])->name('test-search');
+        Route::get('/debug-tax/{orderId}', [SalesmanOrderController::class, 'debugTax'])->name('debug-tax');
+        Route::get('/fix-vat/{orderId}', [SalesmanOrderController::class, 'fixVatForOrder'])->name('fix-vat');
+        Route::get('/debug-loading-sheets', [SalesmanOrderController::class, 'debugLoadingSheets'])->name('debug-loading-sheets');
+        Route::get('/generate-loading-sheets/{shiftId?}', [SalesmanOrderController::class, 'generateLoadingSheets'])->name('generate-loading-sheets');
+        Route::get('/test-mobile-shift-closing/{shiftId}', [SalesmanOrderController::class, 'testMobileShiftClosing'])->name('test-mobile-shift-closing');
+        Route::get('/debug-entire-journey', [SalesmanOrderController::class, 'debugEntireJourney'])->name('debug-entire-journey');
+        Route::get('/debug-pos-customer', [SalesmanOrderController::class, 'debugPosCustomer'])->name('debug-pos-customer');
+        Route::get('/create-default-pos-customer', [SalesmanOrderController::class, 'createDefaultPosCustomer'])->name('create-default-pos-customer');
+        Route::post('/shift/open', [SalesmanOrderController::class, 'openShift'])->name('shift.open');
+        Route::post('/shift/close', [SalesmanOrderController::class, 'closeShift'])->name('shift.close');
+        Route::get('/{id}', [SalesmanOrderController::class, 'show'])->name('show');
+        Route::get('/{id}/print', [SalesmanOrderController::class, 'printOrder'])->name('print');
+        Route::get('/{id}/download', [SalesmanOrderController::class, 'downloadInvoice'])->name('download');
+    });
+
+
+    // Salesman Customer Management Routes
+    Route::group(['prefix' => 'salesman-customers', 'as' => 'salesman-customers.'], function () {
+        Route::get('/', [SalesmanCustomerController::class, 'index'])->name('index');
+        Route::post('/store', [SalesmanCustomerController::class, 'store'])->name('store');
+        Route::get('/{id}', [SalesmanCustomerController::class, 'show'])->name('show');
+        Route::put('/{id}', [SalesmanCustomerController::class, 'update'])->name('update');
+        Route::get('/ajax/delivery-centers', [SalesmanCustomerController::class, 'getDeliveryCenters'])->name('ajax.delivery-centers');
+    });
+
+    // Salesman Access Test Route
+    Route::get('/salesman-test', function () {
+        $user = Auth::user();
+        $salesRoleIds = config('salesman.sales_role_ids', [169, 170]);
+        $salesKeywords = config('salesman.sales_role_keywords', ['sales', 'salesman', 'representative']);
+        $roleName = $user->userRole->name ?? $user->userRole->title ?? '';
+        
+        $hasRoute = !empty($user->route);
+        $isSalesRoleId = in_array((int) $user->role_id, $salesRoleIds);
+        $roleLooksSales = collect($salesKeywords)->some(fn($keyword) => stripos($roleName, $keyword) !== false);
+        
+        return response()->json([
+            'user_id' => $user->id,
+            'user_name' => $user->name,
+            'role_id' => $user->role_id,
+            'role_name' => $roleName,
+            'route' => $user->route,
+            'has_route' => $hasRoute,
+            'is_sales_role_id' => $isSalesRoleId,
+            'role_looks_sales' => $roleLooksSales,
+            'is_salesman' => ($hasRoute || $roleLooksSales || $isSalesRoleId),
+            'can_access_salesman_urls' => true,
+            'salesman_urls' => [
+                'dashboard' => route('salesman-orders.index'),
+                'create_order' => route('salesman-orders.create'),
+                'customer_management' => route('salesman-customers.index')
+            ]
+        ]);
+    })->name('salesman-test');
 
 
     Route::get('/routes/reports/daily-sales-report', [RouteDailySalesReportController::class, 'generate'])->name('route-reports.daily-sales');

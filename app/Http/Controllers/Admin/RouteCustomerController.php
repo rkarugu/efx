@@ -47,23 +47,41 @@ class RouteCustomerController extends Controller
         try {
             $parent = $this->get_parent();
             $searchTerm = $request->q;
+            $page = $request->page ?? 1;
+            $perPage = 30; // Show 30 customers per page
+            
             $route = Route::where('is_pos_route', true)->where('restaurant_id', Auth::user()->restaurant_id)->first();
 
-            $results = WaRouteCustomer::where('customer_id', $parent->id)
+            $query = WaRouteCustomer::where('customer_id', $parent->id)
                 ->where('status', '!=', 'duplicate')
-                ->where('route_id', $route->id)
-                ->where(function ($query) use ($searchTerm) {
-                    if (!empty($searchTerm)) {
-                        $query->where('name', 'like', "%$searchTerm%")
-                            ->orWhere('phone', 'like', "%$searchTerm%");
-                    }
-                })
-                ->select(
+                ->where('route_id', $route->id);
+            
+            // Apply search filter if search term provided
+            if (!empty($searchTerm)) {
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', "%$searchTerm%")
+                      ->orWhere('phone', 'like', "%$searchTerm%");
+                });
+            }
+            
+            // Get total count for pagination
+            $totalCount = $query->count();
+            
+            // Apply pagination
+            $results = $query->select(
                     'id',
-                    DB::raw('CONCAT(name, " --- ", phone) AS title'),  'phone')
-                ->take(5)
+                    DB::raw('CONCAT(name, " --- ", phone) AS title'),
+                    'phone'
+                )
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
+                ->orderBy('name', 'asc')
                 ->get();
-            return response()->json($results);
+            
+            return response()->json([
+                'results' => $results,
+                'total_count' => $totalCount
+            ]);
         } catch (\Throwable $th) {
             return response()->json([
                 'result' => -1,

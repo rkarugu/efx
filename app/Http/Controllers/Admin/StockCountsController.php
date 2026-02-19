@@ -82,6 +82,312 @@ class StockCountsController extends Controller
         }
     }
 
+    /**
+     * Mobile Web Interface for Stock Take Testing
+     * Allows testing decimal quantity support without mobile app
+     */
+    public function mobileWeb()
+    {
+        $permission = $this->mypermissionsforAModule();
+        $pmodule = $this->pmodule;
+        $title = 'Mobile Stock Take - Web';
+        $model = $this->model;
+        $user = Auth::user();
+        
+        if (isset($permission[$pmodule . '___view']) || $permission == 'superadmin') {
+            // Check if user is a Store Keeper (role_id 152, 169, 170, 181)
+            $isStoreKeeper = in_array($user->role_id, [152, 169, 170, 181]);
+            
+            // Pre-select values for Store Keepers
+            $preSelectedStore = null;
+            $preSelectedBin = null;
+            
+            if ($isStoreKeeper) {
+                // Store Keeper: Only show their store and bin
+                $stores = WaLocationAndStore::select('id', 'location_name')
+                    ->where('id', $user->wa_location_and_store_id)
+                    ->get();
+                $bins = WaUnitOfMeasure::select('id', 'title')
+                    ->where('id', $user->wa_unit_of_measures_id)
+                    ->get();
+                $preSelectedStore = $user->wa_location_and_store_id;
+                $preSelectedBin = $user->wa_unit_of_measures_id;
+            } else {
+                // Admin: Show all stores and bins
+                $stores = WaLocationAndStore::select('id', 'location_name')->get();
+                $bins = WaUnitOfMeasure::select('id', 'title')->get();
+            }
+            
+            // All users can see all categories
+            $categories = WaInventoryCategory::select('id', 'category_description')->get();
+            
+            $breadcum = ['Stock Counts' => route('admin.stock-counts'), 'Mobile Web' => ''];
+            return view('admin.stock_counts.mobile_web', compact(
+                'title', 'model', 'breadcum', 'pmodule', 'permission', 
+                'stores', 'bins', 'categories', 
+                'preSelectedStore', 'preSelectedBin', 'isStoreKeeper'
+            ));
+        } else {
+            Session::flash('warning', 'Invalid Request');
+            return redirect()->back();
+        }
+    }
+
+    /**
+     * Get stock take items for mobile web (session-based, no API token needed)
+     * Implements role-based access: Store Keepers and Assigned Users
+     */
+    public function getMobileWebItems(Request $request)
+    {
+        $user = Auth::user();
+        $store = $request->store;
+        $bin = $request->bin;
+        
+        if (!$store || !$bin) {
+            return response()->json(['status' => false, 'message' => 'Store and Bin are required']);
+        }
+
+        // Check if there's a frozen stock take for this store
+        $freezeExists = WaStockCheckFreeze::where('wa_location_and_store_id', $store)->exists();
+        if (!$freezeExists) {
+            return response()->json([
+                'status' => false, 
+                'message' => 'No stock take has been frozen for this store. Please create a stock take first at /admin/stock-takes/create-stock-take-sheet'
+            ]);
+        }
+
+        // Get already counted items to exclude
+        $counts = WaStockCount::where('wa_location_and_store_id', $store)->pluck('wa_inventory_item_id')->toArray();
+        $dd = array_unique($counts);
+        
+        \Log::info("Stock Take Load Request", [
+            'user_id' => $user->id,
+            'role_id' => $user->role_id,
+            'store' => $store,
+            'bin' => $bin,
+            'already_counted' => count($dd)
+        ]);
+
+        // Check if user is a Store Keeper with item allocation (role_id 169, 170, 181)
+        if (in_array($user->role_id, [169, 170, 181])) {
+            // Store Keeper with allocation: Only show items allocated to them
+            $userItems = DisplayBinUserItemAllocation::where('user_id', $user->id)->pluck('wa_inventory_item_id')->toArray();
+            
+            if (empty($userItems)) {
+                return response()->json(['status' => false, 'message' => 'No items allocated to you. Please contact admin.']);
+            }
+
+            $items = WaStockCheckFreezeItem::select(
+                    'wa_inventory_items.id as id',
+                    'wa_inventory_items.stock_id_code as stock_id_code',
+                    'wa_inventory_items.title as title',
+                    'wa_inventory_items.wa_inventory_category_id as category_id',
+                    'wa_stock_check_freeze_items.quantity_on_hand as system_qoh',
+                    'wa_stock_check_freeze_items.id as freeze_id'
+                )
+                ->join('wa_inventory_items', 'wa_inventory_items.id', 'wa_stock_check_freeze_items.wa_inventory_item_id')
+                ->where('wa_stock_check_freeze_items.wa_location_and_store_id', $store)
+                ->where('wa_stock_check_freeze_items.wa_unit_of_measure', $bin)
+                ->whereIn('wa_inventory_items.id', $userItems) // Only allocated items
+                ->whereNotIn('wa_inventory_items.id', $dd)
+                ->orderBy('wa_stock_check_freeze_items.quantity_on_hand', 'desc')
+                ->get()
+                ->unique('id'); // Remove duplicates by item id
+
+            return response()->json([
+                'status' => true, 
+                'items' => $items, 
+                'count' => $items->count(),
+                'user_type' => 'Store Keeper (Allocated)',
+                'message' => 'Showing only your allocated items'
+            ]);
+        }
+        
+        // Check if user is a regular Store Keeper (role_id 152) - sees all items in their store/bin
+        if ($user->role_id == 152) {
+            $items = WaStockCheckFreezeItem::select(
+                    'wa_inventory_items.id as id',
+                    'wa_inventory_items.stock_id_code as stock_id_code',
+                    'wa_inventory_items.title as title',
+                    'wa_inventory_items.wa_inventory_category_id as category_id',
+                    'wa_stock_check_freeze_items.quantity_on_hand as system_qoh',
+                    'wa_stock_check_freeze_items.id as freeze_id'
+                )
+                ->join('wa_inventory_items', 'wa_inventory_items.id', 'wa_stock_check_freeze_items.wa_inventory_item_id')
+                ->where('wa_stock_check_freeze_items.wa_location_and_store_id', $store)
+                ->where('wa_stock_check_freeze_items.wa_unit_of_measure', $bin)
+                ->whereNotIn('wa_inventory_items.id', $dd)
+                ->orderBy('wa_inventory_items.title', 'asc')
+                ->get()
+                ->unique('id'); // Remove duplicates by item id
+
+            return response()->json([
+                'status' => true, 
+                'items' => $items, 
+                'count' => $items->count(),
+                'user_type' => 'Store Keeper',
+                'message' => 'Showing all items in your store/bin'
+            ]);
+        }
+
+        // Check if user has assignment for today
+        $today = Carbon::now()->toDateString();
+        $assignment = StockTakeUserAssignment::latest()
+            ->whereHas('assistant', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            })
+            ->whereDate('stock_take_date', $today)->first();
+
+        if ($assignment) {
+            // Assigned User: Show items based on assignment
+            $categoryIds = explode(',', $assignment->category_ids);
+            
+            $items = WaStockCheckFreezeItem::select(
+                    'wa_inventory_items.id as id',
+                    'wa_inventory_items.stock_id_code as stock_id_code',
+                    'wa_inventory_items.title as title',
+                    'wa_inventory_items.wa_inventory_category_id as category_id',
+                    'wa_stock_check_freeze_items.quantity_on_hand as system_qoh',
+                    'wa_stock_check_freeze_items.id as freeze_id'
+                )
+                ->join('wa_inventory_items', 'wa_inventory_items.id', 'wa_stock_check_freeze_items.wa_inventory_item_id')
+                ->where('wa_stock_check_freeze_items.wa_location_and_store_id', $store)
+                ->where('wa_stock_check_freeze_items.wa_unit_of_measure', $bin)
+                ->whereIn('wa_inventory_items.wa_inventory_category_id', $categoryIds) // Assignment categories
+                ->whereNotIn('wa_inventory_items.id', $dd)
+                ->orderBy('wa_inventory_items.title', 'asc')
+                ->get()
+                ->unique('id'); // Remove duplicates by item id
+
+            return response()->json([
+                'status' => true, 
+                'items' => $items, 
+                'count' => $items->count(),
+                'user_type' => 'Assigned User',
+                'assignment_date' => $assignment->stock_take_date,
+                'message' => 'Showing items from your assignment'
+            ]);
+        }
+
+        // Super Admin or users without restrictions: Show all items
+        $items = WaStockCheckFreezeItem::select(
+                'wa_inventory_items.id as id',
+                'wa_inventory_items.stock_id_code as stock_id_code',
+                'wa_inventory_items.title as title',
+                'wa_inventory_items.wa_inventory_category_id as category_id',
+                'wa_stock_check_freeze_items.quantity_on_hand as system_qoh',
+                'wa_stock_check_freeze_items.id as freeze_id'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', 'wa_stock_check_freeze_items.wa_inventory_item_id')
+            ->where('wa_stock_check_freeze_items.wa_location_and_store_id', $store)
+            ->where('wa_stock_check_freeze_items.wa_unit_of_measure', $bin)
+            ->whereNotIn('wa_inventory_items.id', $dd)
+            ->orderBy('wa_inventory_items.title', 'asc')
+            ->get()
+            ->unique('id'); // Remove duplicates by item id
+
+        \Log::info("Super Admin Items Loaded", [
+            'count' => $items->count(),
+            'store' => $store,
+            'bin' => $bin
+        ]);
+
+        if ($items->count() == 0) {
+            return response()->json([
+                'status' => false, 
+                'message' => 'No items found for this store and bin combination. Either all items have been counted or there are no items in this bin.'
+            ]);
+        }
+
+        return response()->json([
+            'status' => true, 
+            'items' => $items, 
+            'count' => $items->count(),
+            'user_type' => 'Admin/Unrestricted',
+            'message' => 'Showing all items'
+        ]);
+    }
+
+    /**
+     * Submit stock counts from mobile web (session-based, no API token needed)
+     */
+    public function submitMobileWebCounts(Request $request)
+    {
+        $user = Auth::user();
+        
+        $validator = Validator::make($request->all(), [
+            'store' => 'required',
+            'bin' => 'required',
+            'item_id' => 'array|required',
+            'item_quantity' => 'array|required',
+            'item_reference' => 'array|required',
+            'item_id.*' => 'required|exists:wa_inventory_items,id',
+            'item_quantity.*' => 'required|numeric|min:0|regex:/^\d+(\.\d{1,2})?$/', // Support decimals
+            'item_reference.*' => 'nullable',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+
+        DB::beginTransaction();
+        try {
+            foreach ($request->item_id as $index => $itemId) {
+                $inventoryItem = WaInventoryItem::find($itemId);
+                $frozenQuantity = WaStockCheckFreezeItem::latest()
+                    ->where('wa_location_and_store_id', $request->store)
+                    ->where('wa_inventory_item_id', $itemId)->first();
+                
+                $existingCount = WaStockCount::latest()
+                    ->where('wa_location_and_store_id', $request->store)
+                    ->where('wa_inventory_item_id', $itemId)->first();
+                
+                if ($existingCount) {
+                    DB::rollback();
+                    return response()->json(['status' => false, 'message' => "$inventoryItem->title has already been counted."]);
+                }
+
+                if ($frozenQuantity) {
+                    $entity = new WaStockCount();
+                    $entity->wa_location_and_store_id = $request->store;
+                    $entity->wa_inventory_item_id = $itemId;
+                    $entity->user_id = $user->id;
+                    $entity->item_name = $inventoryItem->title;
+                    $entity->category_id = $inventoryItem->wa_inventory_category_id;
+                    $entity->uom = $request->bin;
+                    $entity->quantity = floatval($request->item_quantity[$index]); // Decimal precision
+                    $entity->reference = $request->item_reference[$index] ?? '';
+                    $entity->save();
+
+                    $variance = new WaStockCountVariation();
+                    $variance->user_id = $user->id;
+                    $variance->wa_location_and_store_id = $request->store;
+                    $variance->wa_inventory_item_id = $itemId;
+                    $variance->category_id = $inventoryItem->wa_inventory_category_id;
+                    $variance->quantity_recorded = floatval($request->item_quantity[$index]);
+                    $variance->current_qoh = floatval($frozenQuantity->quantity_on_hand);
+                    
+                    if ($frozenQuantity->quantity_on_hand < 0) {
+                        $variance->variation = $variance->quantity_recorded + $variance->current_qoh;
+                    } else {
+                        $variance->variation = $variance->quantity_recorded - $variance->current_qoh;
+                    }
+
+                    $variance->uom_id = $request->bin;
+                    $variance->reference = $request->item_reference[$index] ?? '';
+                    $variance->save();
+                }
+            }
+
+            DB::commit();
+            return response()->json(['status' => true, 'message' => 'Stock counts submitted successfully']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Mobile web stock count submission failed: ' . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'Failed to submit: ' . $e->getMessage()]);
+        }
+    }
+
 
     public function enterStockCounts()
     {
@@ -733,7 +1039,7 @@ class StockCountsController extends Controller
                 'item_quantity' => 'array|required',
                 'item_reference' => 'array|required',
                 'item_id.*' => 'required|exists:wa_inventory_items,id',
-                'item_quantity.*' => 'required|numeric',
+                'item_quantity.*' => 'required|numeric|min:0|regex:/^\d+(\.\d{1,2})?$/', // Support decimals up to 2 places
                 'item_reference.*' => 'nullable',
 
 
@@ -765,8 +1071,9 @@ class StockCountsController extends Controller
                     $entity->item_name = $inventoryItem->title;
                     $entity->category_id = $inventoryItem->wa_inventory_category_id;
                     $entity->uom = $request->bin;
-                    $entity->quantity = isset($request->item_quantity[$index]) ? $request->item_quantity[$index] : 0;
+                    $entity->quantity = isset($request->item_quantity[$index]) ? floatval($request->item_quantity[$index]) : 0; // Ensure decimal precision
                     $entity->reference = isset($request->item_reference[$index]) ? $request->item_reference[$index] : '';
+                    $entity->counted_at = now(); // Audit trail
                     $entity->save();
 
                     $variance = new WaStockCountVariation();
@@ -774,9 +1081,9 @@ class StockCountsController extends Controller
                     $variance->wa_location_and_store_id = $request->store;
                     $variance->wa_inventory_item_id = $itemId;
                     $variance->category_id = $inventoryItem->wa_inventory_category_id;
-                    $variance->quantity_recorded = isset($request->item_quantity[$index]) ? $request->item_quantity[$index] : 0;
+                    $variance->quantity_recorded = isset($request->item_quantity[$index]) ? floatval($request->item_quantity[$index]) : 0; // Decimal precision
                     // $variance->current_qoh = getItemAvailableQuantity($row->stock_id_code, $request->store);
-                    $variance->current_qoh = $frozenQuantity->quantity_on_hand;
+                    $variance->current_qoh = floatval($frozenQuantity->quantity_on_hand); // Decimal precision
                     if ($frozenQuantity->quantity_on_hand < 0) {
                         $variance->variation = isset($request->item_quantity[$index]) ? ($variance->quantity_recorded + $variance->current_qoh) : null;
                     } else {

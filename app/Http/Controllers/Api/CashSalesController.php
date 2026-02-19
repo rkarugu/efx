@@ -207,24 +207,67 @@ class CashSalesController extends Controller
     }
     private static function generateNewSalesNumber(): string
     {
-        DB::beginTransaction();
-        try {
-            $series_module = WaNumerSeriesCode::where('module', 'CASH_SALES')
-                ->lockForUpdate()
-                ->first();
+        $maxAttempts = 10;
+        $attempt = 1;
 
-            $lastNumberUsed = $series_module->last_number_used;
-            $newNumber = (int)$lastNumberUsed + 1;
-            $sales_no = $series_module->code . '-' . str_pad($newNumber, 5, "0", STR_PAD_LEFT);
+        while ($attempt <= $maxAttempts) {
+            DB::beginTransaction();
+            try {
+                $series_module = WaNumerSeriesCode::where('module', 'CASH_SALES')
+                    ->lockForUpdate()
+                    ->first();
 
-            $series_module->update(['last_number_used' => $newNumber]);
-            DB::commit();
-            return $sales_no;
+                if (!$series_module) {
+                    throw new \RuntimeException('CASH_SALES number series not found');
+                }
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
+                $lastNumberUsed = $series_module->last_number_used;
+                $newNumber = (int)$lastNumberUsed + 1;
+                $sales_no = $series_module->code . '-' . str_pad($newNumber, 5, "0", STR_PAD_LEFT);
+
+                // Check for uniqueness in BOTH tables to prevent conflicts
+                $existsInCashSales = WaPosCashSales::where('sales_no', $sales_no)->exists();
+                $existsInRequisition = \App\Model\WaInternalRequisition::where('requisition_no', $sales_no)->exists();
+
+                if (!$existsInCashSales && !$existsInRequisition) {
+                    $series_module->update(['last_number_used' => $newNumber]);
+                    DB::commit();
+                    
+                    // Log successful generation for debugging
+                    \Log::info('API: Generated unique sales number', [
+                        'sales_no' => $sales_no,
+                        'attempt' => $attempt
+                    ]);
+                    
+                    return $sales_no;
+                }
+                
+                DB::rollBack();
+                
+                // Log collision for debugging
+                \Log::warning('API: Sales number collision detected', [
+                    'sales_no' => $sales_no,
+                    'attempt' => $attempt,
+                    'exists_in_cash_sales' => $existsInCashSales,
+                    'exists_in_requisition' => $existsInRequisition
+                ]);
+                
+                $attempt++;
+                
+                // Add small delay to reduce race conditions
+                usleep(rand(10000, 50000)); // 10-50ms random delay
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('API: Error generating sales number', [
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage()
+                ]);
+                throw $e;
+            }
         }
+
+        throw new \RuntimeException("Unable to generate unique sales number after {$maxAttempts} attempts");
     }
     public function update($id, Request $request)
     {
@@ -562,7 +605,8 @@ class CashSalesController extends Controller
 
         if ($promotion) {
             /*get promotion type*/
-            $promotionType = $promotion->promotion_type_id ? PromotionType::find($promotion->promotion_type_id)->description : null;
+            $promotionTypeModel = $promotion->promotion_type_id ? PromotionType::find($promotion->promotion_type_id) : null;
+            $promotionType = $promotionTypeModel ? $promotionTypeModel->description : null;
 
             if ($promotionType) {
 

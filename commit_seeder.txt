@@ -1,0 +1,9 @@
+Add seeder to fix customer statement data for production deployment
+
+This seeder combines all data fixes into one command:
+1. Syncs existing invoice payments to wa_debtor_trans
+2. Adds invoice numbers to payment references
+3. Fixes invoice timestamps using order creation times
+
+Usage on production:
+php artisan db:seed --class=FixCustomerStatementDataSeeder

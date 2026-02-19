@@ -1,0 +1,781 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\ItemPromotion;
+use App\Jobs\PerformPostSaleActions;
+use App\Model\PackSize;
+use App\Model\Route;
+use App\Model\UserLog;
+use App\Model\WaCustomer;
+use App\Model\WaInternalRequisition;
+use App\Model\WaInternalRequisitionItem;
+use App\Model\WaInventoryAssignedItems;
+use App\Model\WaInventoryItem;
+use App\Model\WaInventoryLocationTransfer;
+use App\Model\WaInventoryLocationTransferItem;
+use App\Model\WaInventoryLocationUom;
+use App\Model\WaNumerSeriesCode;
+use App\Model\WaRouteCustomer;
+use App\Model\WaStockBreaking;
+use App\Model\WaStockBreakingItem;
+use App\Model\WaStockMove;
+use App\Models\RouteAutoBreak;
+use App\Models\RoutePricing;
+use App\OrderLocationLog;
+use App\SalesmanShift;
+use App\Services\MappingService;
+use App\WaInventoryLocationTransferItemReturn;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Models\MissingItemsSale;
+use App\DiscountBand;
+use App\Model\DeliveryCentres;
+
+
+class SalesInvoiceController extends Controller
+{
+    public function create(Request $request): JsonResponse
+    {
+        /**
+         * The below snippet goes outside the DB transaction to fix a persistent duplication issue.
+         * When the network is slow and requests are many, it would run into invoice number duplication issue.
+         * Below is a temporary fix.
+         *
+         * ~ @isaacmutie ~
+         */
+        $series_module = WaNumerSeriesCode::where('module', 'INTERNAL REQUISITIONS')->first();
+        $lastNumberUsed = $series_module->last_number_used;
+        $newNumber = (int)$lastNumberUsed + 1;
+        $series_module->update(['last_number_used' => $newNumber]);
+
+        DB::beginTransaction();
+        try {
+            $validator = Validator::make($request->all(), [
+                'route' => 'required|exists:routes,id',
+                'route_customer_id' => 'required|exists:wa_route_customers,id',
+                'item_id' => 'array',
+                'item_quantity' => 'array',
+                'item_id.*' => 'required|exists:wa_inventory_items,id',
+                'item_quantity.*' => 'required|min:1|numeric',
+            ], [
+                'item_quantity.*.min' => 'Quantity must be greater than or equal to 1',
+            ], [
+                'item_id.*' => 'Item',
+                'item_quantity.*' => 'Quantity',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->jsonify(['errors' => $validator->errors(), 'result' => 0], 422);
+            }
+
+            $user = JWTAuth::toUser($request->token);
+            if (!$user) {
+                return $this->jsonify(['errors' => 'Invalid token provided.'], 422);
+            }
+
+            $route = Route::find($request->route);
+            if (!$route) {
+                return $this->jsonify(['errors' => 'Invalid route ID provided.'], 422);
+            }
+
+            $customerAccount = DB::table('wa_customers')->where('route_id', $route->id)->first();
+            if (!$customerAccount) {
+                return $this->jsonify(['errors' => 'Your salesman account has not been set up. Contact system administrators.'], 422);
+            }
+
+            if ($customerAccount->is_blocked == 1) {
+                return $this->jsonify(['result' => -1, 'message' => "Your account is blocked from making any orders. Please contact your supervisor."], 422);
+            }
+
+            $currentShift = DB::table('salesman_shifts')->where('status', 'open')
+                ->where('route_id', $route->id)->first();
+            
+            // If no shift in salesman_shifts, check wa_shifts
+            if (!$currentShift) {
+                $waShift = DB::table('wa_shifts')->where('status', 'open')
+                    ->where('route', $route->route_name)
+                    ->where('salesman_id', $user->id)->first();
+                
+                if ($waShift) {
+                    // Create a temporary shift object for compatibility
+                    $currentShift = (object)[
+                        'id' => $waShift->id,
+                        'route_id' => $route->id,
+                        'status' => 'open',
+                        'shift_type' => 'onsite', // Default to onsite for wa_shifts
+                    ];
+                }
+            }
+            
+            if (!$currentShift) {
+                return $this->jsonify(['result' => -1, 'message' => "Route $route->route_name does not have an open shift"], 422);
+            }
+
+            $routeCustomer = WaRouteCustomer::find($request->route_customer_id);
+            if (!$routeCustomer) {
+                return $this->jsonify(['errors' => 'Invalid customer ID provided.'], 422);
+            }
+
+            if ($routeCustomer->credit_customer_id != null)
+            {
+                $customerAccount = DB::table('wa_customers')->find($routeCustomer->credit_customer_id);
+            }
+
+            // Attempt to block duplicate orders.
+           $fiveMinutesAgo = Carbon::now()->subMinutes(5)->toDateTimeString();
+           $now = Carbon::now()->toDateTimeString();
+            $existingCustomerOrder = WaInternalRequisition::latest()->with('getRelatedItem')->where('wa_route_customer_id', $routeCustomer->id)
+                ->where('wa_shift_id', $currentShift->id)
+               ->whereBetween('created_at', [$fiveMinutesAgo, $now])
+                ->first();
+            if ($existingCustomerOrder) {
+                $itemIds = $existingCustomerOrder->getRelatedItem()->whereNot('selling_price', 0)->pluck('wa_inventory_item_id')->toArray();
+                $itemQuantities = $existingCustomerOrder->getRelatedItem()->whereNot('selling_price', 0)->pluck('quantity')->toArray();
+                $incomingIds = $request->item_id;
+                $incomingQuantities = $request->item_quantity;
+                $itemIds = array_map('intval', $itemIds);
+                $itemQuantities = array_map('intval', $itemQuantities);
+                $incomingIds = array_map('intval', $incomingIds);
+                $incomingQuantities = array_map('intval', $incomingQuantities);
+                sort($itemIds);
+                sort($incomingIds);
+                sort($itemQuantities);
+                sort($incomingQuantities);
+                if (($itemIds == $incomingIds) && ($itemQuantities == $incomingQuantities)) {
+                    return $this->jsonify(['message' => 'A similar order exists for this customer'], 422);
+                }
+            }
+
+            $locationLog = null;
+            $salesmanLat = $request->latitude ?? 0;
+            $salesmanLng = $request->longitude ?? 0;
+            
+            // Only calculate distance if both coordinates are valid
+            $distance = 0;
+            if ($salesmanLat && $salesmanLng && $routeCustomer->lat && $routeCustomer->lng) {
+                $distance = MappingService::getTheaterDistanceBetweenTwoPoints($salesmanLat, $salesmanLng, $routeCustomer->lat, $routeCustomer->lng);
+            }
+            
+            $locationLog = OrderLocationLog::create([
+                'salesman_id' => $user->id,
+                'shop_id' => $routeCustomer->id,
+                'shift_id' => $currentShift->id,
+                'salesman_lat' => $salesmanLat,
+                'salesman_lng' => $salesmanLng,
+                'shop_lat' => $routeCustomer->lat,
+                'shop_lng' => $routeCustomer->lng,
+                'proximity' => $route->salesman_proximity,
+                'distance' => $distance,
+                'status' => 'passed',
+            ]);
+
+            if ($currentShift->shift_type == 'onsite') {
+                if ($distance > $route->salesman_proximity) {
+                    $locationLog->update(['status' => 'failed']);
+                    DB::commit();
+                    return $this->jsonify(['message' => "You are outside the allowed order taking distance ($distance) from the shop."], 422);
+                }
+            }
+
+            if ($currentShift->shift_type == 'offsite') {
+                $settings = getAllSettings();
+                if ($settings['CHECK_OFFSITE_DISTANCE'] == 1) {
+                    $firstOrder = WaInternalRequisition::where('wa_shift_id', $currentShift->id)->first();
+                    if ($firstOrder && $firstOrder->shift_type == 'offsite') {
+                        $offsiteDistance = MappingService::getTheaterDistanceBetweenTwoPoints($salesmanLat, $salesmanLng, $route->start_lat, $route->start_lng);
+                        if ($offsiteDistance > $settings['MAX_OFFSITE_DISTANCE']) {
+                            $locationLog->update(['status' => 'failed']);
+                            $locationLog->update(['distance' => $offsiteDistance]);
+                            DB::commit();
+                            return $this->jsonify(['message' => "All offsite orders should be taken at the Store. Please go to the store."], 422);
+                        }
+                    }
+                }
+            }
+
+            $internalRequisition = WaInternalRequisition::create([
+                'requisition_no' => "INV-$newNumber",
+                'slug' => strtolower("INV-$newNumber"),
+                'user_id' => $user->id,
+                'restaurant_id' => $user->restaurant_id,
+                'wa_shift_id' => $currentShift->id,
+                'shift_type' => $currentShift->shift_type,
+                'to_store_id' => $user->wa_location_and_store_id,
+                'wa_location_and_store_id' => $user->wa_location_and_store_id,
+                'requisition_date' => Carbon::now(),
+                'name' => $routeCustomer->name,
+                'route_id' => $route->id,
+                'route' => $route->route_name,
+                'customer_id' => $customerAccount->id,
+                'wa_route_customer_id' => $routeCustomer->id,
+                'customer' => $routeCustomer->bussiness_name,
+                'customer_phone_number' => $routeCustomer->phone,
+                'customer_pin' => $routeCustomer->kra_pin,
+                'status' => 'APPROVED',
+            ]);
+            $invoice_number = $internalRequisition->requisition_no;
+
+            if ($locationLog) {
+                $locationLog->update(['order_id' => $internalRequisition->id]);
+            }
+
+            // $stockMoves = DB::table('wa_stock_moves')->select('id', 'wa_inventory_item_id', 'qauntity', 'new_qoh', 'wa_location_and_store_id')
+            //     ->where('wa_location_and_store_id', $user->wa_location_and_store_id)->get();
+            $taxManagers = DB::table('tax_managers')->select('id', 'title', 'tax_value')->get();
+            $discountBands = DB::table('discount_bands')->get();
+            $inventoryItems = WaInventoryItem::all();
+
+            foreach ($request->item_id as $index => $itemId) {
+                $inventoryItem = $inventoryItems->where('id', $itemId)->first();
+                //check for bin location
+                $inventoryItemBin = WaInventoryLocationUom::latest()
+                    ->where('location_id', $user->wa_location_and_store_id)
+                    ->where('inventory_id', $itemId)
+                    ->first();
+                if (!$inventoryItemBin) {
+                    DB::rollBack();
+                    return $this->jsonify(['message' => "Item $inventoryItem->title does not have a bin location assigned."], 422);
+                }
+
+                if ($inventoryItem->block_this == 1) {
+                    DB::rollBack();
+                    return $this->jsonify(['message' => "Item $inventoryItem->title has been blocked and cannot accept orders."], 422);
+                }
+                $itemMargin = $inventoryItem->selling_price - $inventoryItem->standard_cost;
+                if ($itemMargin < 1) {
+                    DB::rollBack();
+                    return response()->json(['result' => -1, 'message' => "$inventoryItem->title is disabled due to negative margin."], 422);
+                }
+                if ($inventoryItem->standard_cost == 0) {
+                    DB::rollBack();
+                    return response()->json(['result' => -1, 'message' => "$inventoryItem->title is disabled due to 0 cost. Please contact administration"], 422);
+                }
+
+
+                $itemQoh = WaStockMove::where('wa_location_and_store_id', $user->wa_location_and_store_id)->where('wa_inventory_item_id', $inventoryItem->id)->sum('qauntity');
+                //check return to supplier
+                $returnToSupplier = DB::table('wa_store_return_items')
+                    ->select('wa_store_return_items.quantity as quantity')
+                    ->leftJoin('wa_store_returns', 'wa_store_returns.id', '=', 'wa_store_return_items.wa_store_return_id')
+                    ->where('wa_store_returns.approved', 0)
+                    ->where('wa_store_returns.rejected', 0)
+                    ->where('wa_store_return_items.wa_inventory_item_id', $inventoryItem->id)
+                    ->where('wa_store_returns.location_id', $user->wa_location_and_store_id)
+                    ->get();
+                if ($returnToSupplier) {
+                    foreach ($returnToSupplier as $storeReturn) {
+                        $itemQoh = $itemQoh - $storeReturn->quantity;
+                    }
+                }
+                $orderQty = $request->item_quantity[$index];
+
+                // TODO: Optimize
+                if ($itemQoh < $orderQty) {
+                    $orderItem = $inventoryItem;
+                    $motherItemRelation = WaInventoryAssignedItems::where('destination_item_id', $orderItem->id)->first();
+                    if (!$motherItemRelation) {
+                        DB::rollBack();
+                        //save details
+                        $this->recordMissingItems($currentShift->id, $user->id, $invoice_number, $inventoryItem->id, $orderQty, $itemQoh, $routeCustomer->id);
+                        return $this->jsonify(['message' => "Item $inventoryItem->title ($itemQoh) does not have enough quantity to order $orderQty"], 422);
+                    }
+                    $motherItem = WaInventoryItem::with(['getAllFromStockMoves'])->find($motherItemRelation->wa_inventory_item_id);
+                    $motherItemBin = WaInventoryLocationUom::latest()
+                        ->where('location_id', $user->wa_location_and_store_id)
+                        ->where('inventory_id', $motherItemRelation->wa_inventory_item_id)
+                        ->first();
+                    if (!$motherItemBin) {
+                        DB::rollBack();
+                        return $this->jsonify(['message' => "Item $motherItem->title does not have a bin location assigned."], 422);
+                    }
+                    $motherItemQuantity = $motherItem->getAllFromStockMoves()->where('wa_location_and_store_id', $user->wa_location_and_store_id)->sum('qauntity');
+                    
+
+                    //Check Return To Supplier 
+                    $motherReturnToSupplier = DB::table('wa_store_return_items')
+                        ->select('wa_store_return_items.quantity as quantity')
+                        ->leftJoin('wa_store_returns', 'wa_store_returns.id', '=', 'wa_store_return_items.wa_store_return_id')
+                        ->where('wa_store_returns.approved', 0)
+                        ->where('wa_store_returns.rejected', 0)
+                        ->where('wa_store_return_items.wa_inventory_item_id', $inventoryItem->id)
+                        ->where('wa_store_returns.location_id', $user->wa_location_and_store_id)
+                        ->get();
+                    if ($motherReturnToSupplier) {
+                        foreach ($motherReturnToSupplier as $storeReturn) {
+                            $motherItemQuantity = $motherItemQuantity - $storeReturn->quantity;
+                        }
+                    }
+                    $availableSplitQty = $motherItemQuantity * $motherItemRelation->conversion_factor;
+                    $requiredQty = $orderQty - $orderItem->quantity;
+                    if ($availableSplitQty < $requiredQty) {
+                        DB::rollBack();
+                        //save missing Items
+                        $this->recordMissingItems($currentShift->id, $user->id, $invoice_number, $inventoryItem->id, $orderQty, $itemQoh, $routeCustomer->id);
+                        return $this->jsonify(['message' => "Item $inventoryItem->title ($itemQoh) does not have enough quantity to order $orderQty"], 422);
+                    }
+
+                    $motherQuantityToBreak = ceil($requiredQty / $motherItemRelation->conversion_factor);
+                    $destinationQty = $motherQuantityToBreak * $motherItemRelation->conversion_factor;
+                    $stock_break_number = getCodeWithNumberSeries('STOCKBREAKING');
+                    $head = new WaStockBreaking();
+                    $head->user_id = $user->id;
+                    $head->date = \Carbon\Carbon::now()->toDateString();
+                    $head->time = \Carbon\Carbon::now()->toTimeString();
+                    $head->breaking_code = $stock_break_number;
+                    $head->status = 'PROCESSED';
+                    $head->save();
+
+                    $line = new WaStockBreakingItem();
+                    $line->wa_stock_breaking_id = $head->id;
+                    $line->source_item_id = $motherItem->id;
+                    $line->source_item_bal_stock = $motherItemQuantity;
+                    $line->source_qty = $motherQuantityToBreak;
+                    $line->destination_item_id = $orderItem->id;
+                    $line->conversion_factor = $motherItemRelation->conversion_factor;
+                    $line->destination_qty = $destinationQty;
+                    $line->save();
+
+                    //perform stock moves for mother and child
+                    $parentStockMove = new WaStockMove();
+                    $parentStockMove->user_id = $user->id;
+                    $parentStockMove->restaurant_id = $user->restaurant_id;
+                    $parentStockMove->wa_location_and_store_id = $user->wa_location_and_store_id;
+                    $parentStockMove->wa_inventory_item_id = $motherItem->id;
+                    $parentStockMove->standard_cost = $motherItem->standard_cost;
+                    $parentStockMove->qauntity = $motherQuantityToBreak * -1;
+                    $parentStockMove->new_qoh = $motherItemQuantity - $motherQuantityToBreak;
+                    $parentStockMove->stock_id_code = $motherItem->stock_id_code;
+                    $parentStockMove->price = $motherItem->selling_price * $motherQuantityToBreak;
+                    $parentStockMove->document_no = $stock_break_number;
+                    $parentStockMove->refrence = "$route->route_name/$stock_break_number/$internalRequisition->requisition_no";
+                    $parentStockMove->total_cost = $motherItem->selling_price * $motherQuantityToBreak;
+                    $parentStockMove->selling_price = $motherItem->selling_price;
+                    $parentStockMove->route_id = $route->id;
+                    $parentStockMove->save();
+
+                    $childStockMove = new WaStockMove();
+                    $childStockMove->user_id = $user->id;
+                    $childStockMove->restaurant_id = $user->restaurant_id;
+                    $childStockMove->wa_location_and_store_id = $user->wa_location_and_store_id;
+                    $childStockMove->wa_inventory_item_id = $orderItem->id;
+                    $childStockMove->standard_cost = $orderItem->standard_cost;
+                    $childStockMove->qauntity = $destinationQty;
+                    $childStockMove->new_qoh = $orderItem->quantity + $destinationQty;
+                    $childStockMove->stock_id_code = $orderItem->stock_id_code;
+                    $childStockMove->price = $orderItem->selling_price * $destinationQty;
+                    $childStockMove->total_cost = $orderItem->selling_price * $destinationQty;
+                    $childStockMove->selling_price = $orderItem->selling_price;
+                    $childStockMove->document_no = $stock_break_number;
+                    $childStockMove->refrence = "$route->route_name/$stock_break_number/$internalRequisition->requisition_no";
+                    $childStockMove->save();
+
+                    updateUniqueNumberSeries('STOCKBREAKING', $stock_break_number);
+
+                    // Populate auto break list
+                    $childBinId = WaInventoryLocationUom::where('inventory_id', $orderItem->id)->where('location_id', $user->wa_location_and_store_id)->first()?->uom_id;
+                    $childPackSize = PackSize::find($orderItem->pack_size_id)->title;
+                    $motherBinId = WaInventoryLocationUom::where('inventory_id', $motherItem->id)->where('location_id', $user->wa_location_and_store_id)->first()?->uom_id;
+                    $motherPackSize = PackSize::find($motherItem->pack_size_id)->title;
+
+                    RouteAutoBreak::create([
+                        'stb_number' => $stock_break_number,
+                        'child_item_id' => $orderItem->id,
+                        'child_bin_id' => $childBinId,
+                        'child_quantity' => $destinationQty,
+                        'child_pack_size' => $childPackSize,
+                        'mother_item_id' => $motherItem->id,
+                        'mother_bin_id' => $motherBinId,
+                        'mother_quantity' => $motherQuantityToBreak,
+                        'mother_pack_size' => $motherPackSize,
+                        'route_id' => $route->id,
+                        'shift_id' => $currentShift->id,
+                        'salesman_id' => $user->id,
+                        'invoice_id' => $internalRequisition->id,
+                    ]);
+                }
+
+                // Cap Imported sugar @30 bags
+                // if ($inventoryItem->stock_id_code == 'HYD03B') {
+                //     if ($orderQty > 30) {
+                //         DB::rollBack();
+                //         return $this->jsonify(['message' => "You cannot order more than 30 bags of $inventoryItem->title for the same customer"], 422);
+                //     }
+                // }
+                //check max order quantity
+                $start = Carbon::now()->startOfDay()->toDateTimeString();
+                $end = Carbon::now()->endOfDay()->toDateTimeString();
+                if ($inventoryItem->max_order_quantity && $inventoryItem->max_order_quantity > 0) {
+                    //check existing  order for customer
+                    $existingItemOrder = DB::table('wa_internal_requisitions')
+                        ->leftJoin('wa_internal_requisition_items', 'wa_internal_requisitions.id', '=', 'wa_internal_requisition_items.wa_internal_requisition_id')
+                        ->where('wa_internal_requisitions.route_id', '=', $route->id)
+                        ->where('wa_internal_requisitions.wa_route_customer_id', '=', $routeCustomer->id)
+                        ->whereBetween('wa_internal_requisitions.created_at',[$start, $end])
+                        ->where('wa_internal_requisition_items.wa_inventory_item_id', '=', $inventoryItem->id)
+                        ->sum('wa_internal_requisition_items.quantity');
+                    if (($orderQty + $existingItemOrder) > $inventoryItem->max_order_quantity) {
+                        DB::rollBack();
+                        return $this->jsonify(['message' => "You cannot order more than $inventoryItem->max_order_quantity bags of $inventoryItem->title for the same customer"], 422);
+                    }
+                }
+
+                $sellingPriceToUse = $inventoryItem->selling_price;
+                $routePricing = RoutePricing::latest()->where('wa_inventory_item_id', $itemId)->where('status', 0)->whereRaw('FIND_IN_SET( ?  , route_id)', [$route->id])->first();
+                if (!empty($routePricing)) {
+                    $sellingPriceToUse = $routePricing->price;
+                }
+
+                $discount = 0;
+                $discountDescription = null;
+
+                // $discountBand = $discountBands->where('inventory_item_id', $inventoryItem->id)
+                //     ->where('from_quantity', '<=', $orderQty)
+                //     ->where('to_quantity', '>=', $orderQty)
+                //     ->first();
+                $discountBand = DiscountBand::where('inventory_item_id', $inventoryItem->id)
+                    ->where(function($query) use ($orderQty, $inventoryItem) {
+                        $query->where('from_quantity', '<=', $orderQty)
+                            ->where('to_quantity', '>=', $orderQty);
+                    })
+                    ->orWhere(function($query) use ($orderQty, $inventoryItem) {
+                        $query->where('inventory_item_id', $inventoryItem->id)
+                            ->where('to_quantity', '<', $orderQty);
+                    })
+                    ->orderBy('to_quantity', 'desc') 
+                    ->first();
+
+                if ($discountBand) {
+                    $discount = $discountBand->discount_amount;
+                    $discountDescription = "$discountBand->discount_amount discount for quantity between $discountBand->from_quantity and $discountBand->to_quantity";
+                }
+
+                $itemTotal = ($sellingPriceToUse - $discount) * $orderQty;
+                $vatAmount = 0;
+                $vatRate = 0;
+                $taxManager = $taxManagers->where('id', $inventoryItem->tax_manager_id)->first();
+                if ($taxManager) {
+                    $vatRate = (float)$taxManager->tax_value;
+                    $vatAmount = ($vatRate / (100 + $vatRate)) * $itemTotal;
+                }
+
+                WaInternalRequisitionItem::create([
+                    'wa_internal_requisition_id' => $internalRequisition->id,
+                    'wa_inventory_item_id' => $inventoryItem->id,
+                    'quantity' => $orderQty,
+                    'standard_cost' => $inventoryItem->standard_cost,
+                    'selling_price' => $sellingPriceToUse,
+                    'total_cost' => $itemTotal,
+                    'tax_manager_id' => $inventoryItem->tax_manager_id,
+                    'vat_rate' => $vatRate,
+                    'vat_amount' => $vatAmount,
+                    'total_cost_with_vat' => $itemTotal,
+                    'store_location_id' => $internalRequisition->to_store_id,
+                    'hs_code' => $inventoryItem->hs_code,
+                    'discount' => $discount * $orderQty,
+                    'discount_description' => $discountDescription,
+                ]);
+
+                $promotion = ItemPromotion::where('inventory_item_id', $inventoryItem->id)
+                    ->where('status', 'active')
+                    ->whereNotNull('promotion_item_id')
+                    ->where(function ($query) {
+                        $today = \Carbon\Carbon::today();
+                        $query->where('from_date', '<=', $today)
+                            ->where(function ($subQuery) use ($today) {
+                                $subQuery->where('to_date', '>=', $today)
+                                         ->orWhereNull('to_date');
+                            });
+                    })
+                    ->first();
+                if ($promotion) {
+                    $promotionBatches = floor($orderQty / (float)$promotion->sale_quantity);
+                    if ($promotionBatches > 0) {
+                        $promotionQty = $promotionBatches * $promotion->promotion_quantity;
+                        $promotionItem = WaInventoryItem::find($promotion->promotion_item_id);
+                        $promotionItemQoh = WaStockMove::where('wa_inventory_item_id', $promotionItem->id)->where('wa_location_and_store_id', $internalRequisition->to_store_id)->sum('qauntity');
+                        if ($promotionItemQoh < $promotionQty) {
+                            //auto break stock on promotion
+                            $motherItemRelation = WaInventoryAssignedItems::where('destination_item_id', $promotionItem->id)->first();
+                            if (!$motherItemRelation) {
+                                DB::rollBack();
+
+                                return response()->json(['result' => -1, 'message' => "Promotion item $promotionItem->title attached to $inventoryItem->title does not have enough quantity"], 422);
+                            }
+
+                            $motherItem = WaInventoryItem::with(['getAllFromStockMoves'])->find($motherItemRelation->wa_inventory_item_id);
+                            $motherItemQuantity = $motherItem->getAllFromStockMoves()->where('wa_location_and_store_id', $user->wa_location_and_store_id)->sum('qauntity');
+                            $availableSplitQty = $motherItemQuantity * $motherItemRelation->conversion_factor;
+                            $requiredQty = $promotionQty - $promotionItemQoh;
+                            if ($availableSplitQty < $requiredQty) {
+                                DB::rollBack();
+                                return response()->json(['result' => -1, 'message' => "Promotion Item $promotionItem->title does not have enough quantity"], 422);
+                            }
+
+                            $motherQuantityToBreak = ceil($requiredQty / $motherItemRelation->conversion_factor);
+                            $destinationQty = $motherQuantityToBreak * $motherItemRelation->conversion_factor;
+                            $stock_break_number = getCodeWithNumberSeries('STOCKBREAKING');
+                            $head = new WaStockBreaking();
+                            $head->user_id = $user->id;
+                            $head->date = \Carbon\Carbon::now()->toDateString();
+                            $head->time = \Carbon\Carbon::now()->toTimeString();
+                            $head->breaking_code = $stock_break_number;
+                            $head->status = 'PROCESSED';
+                            $head->save();
+
+                            $line = new WaStockBreakingItem();
+                            $line->wa_stock_breaking_id = $head->id;
+                            $line->source_item_id = $motherItem->id;
+                            $line->source_item_bal_stock = $motherItemQuantity;
+                            $line->source_qty = $motherQuantityToBreak;
+                            $line->destination_item_id = $promotionItem->id;
+                            $line->conversion_factor = $motherItemRelation->conversion_factor;
+                            $line->destination_qty = $destinationQty;
+                            $line->save();
+
+                            //perform stock moves for mother and child
+                            $parentStockMove = new WaStockMove();
+                            $parentStockMove->user_id = $user->id;
+                            $parentStockMove->restaurant_id = $user->restaurant_id;
+                            $parentStockMove->wa_location_and_store_id = $user->wa_location_and_store_id;
+                            $parentStockMove->wa_inventory_item_id = $motherItem->id;
+                            $parentStockMove->standard_cost = $motherItem->standard_cost;
+                            $parentStockMove->qauntity = $motherQuantityToBreak * -1;
+                            $parentStockMove->new_qoh = $motherItemQuantity - $motherQuantityToBreak;
+                            $parentStockMove->stock_id_code = $motherItem->stock_id_code;
+                            $parentStockMove->price = $motherItem->selling_price * $motherQuantityToBreak;
+                            $parentStockMove->document_no = $stock_break_number;
+                            $parentStockMove->refrence = "$route->route_name/$stock_break_number/$internalRequisition->requisition_no";
+                            $parentStockMove->total_cost = $motherItem->selling_price * $motherQuantityToBreak;
+                            $parentStockMove->selling_price = $motherItem->selling_price;
+                            $parentStockMove->route_id = $route->id;
+                            $parentStockMove->save();
+
+                            $childStockMove = new WaStockMove();
+                            $childStockMove->user_id = $user->id;
+                            $childStockMove->restaurant_id = $user->restaurant_id;
+                            $childStockMove->wa_location_and_store_id = $user->wa_location_and_store_id;
+                            $childStockMove->wa_inventory_item_id = $promotionItem->id;
+                            $childStockMove->standard_cost = $promotionItem->standard_cost;
+                            $childStockMove->qauntity = $destinationQty;
+                            $childStockMove->new_qoh = $promotionItemQoh + $destinationQty;
+                            $childStockMove->stock_id_code = $promotionItem->stock_id_code;
+                            $childStockMove->price = $promotionItem->selling_price * $destinationQty;
+                            $childStockMove->total_cost = $promotionItem->selling_price * $destinationQty;
+                            $childStockMove->selling_price = $promotionItem->selling_price;
+                            $childStockMove->document_no = $stock_break_number;
+                            $childStockMove->refrence = "$route->route_name/$stock_break_number/$internalRequisition->requisition_no";
+                            $childStockMove->save();
+
+                            updateUniqueNumberSeries('STOCKBREAKING', $stock_break_number);
+
+                            // Populate auto break list
+                            $childBinId = WaInventoryLocationUom::where('inventory_id', $promotionItem->id)->where('location_id', $user->wa_location_and_store_id)->first()?->uom_id;
+                            $childPackSize = PackSize::find($promotionItem->pack_size_id)->title;
+                            $motherBinId = WaInventoryLocationUom::where('inventory_id', $motherItem->id)->where('location_id', $user->wa_location_and_store_id)->first()?->uom_id;
+                            $motherPackSize = PackSize::find($motherItem->pack_size_id)->title;
+
+                            RouteAutoBreak::create([
+                                'stb_number' => $stock_break_number,
+                                'child_item_id' => $promotionItem->id,
+                                'child_bin_id' => $childBinId,
+                                'child_quantity' => $destinationQty,
+                                'child_pack_size' => $childPackSize,
+                                'mother_item_id' => $motherItem->id,
+                                'mother_bin_id' => $motherBinId,
+                                'mother_quantity' => $motherQuantityToBreak,
+                                'mother_pack_size' => $motherPackSize,
+                                'route_id' => $route->id,
+                                'shift_id' => $currentShift->id,
+                                'salesman_id' => $user->id,
+                                'invoice_id' => $internalRequisition->id,
+                            ]);
+                        }
+                        WaInternalRequisitionItem::create([
+                            'wa_internal_requisition_id' => $internalRequisition->id,
+                            'wa_inventory_item_id' => $promotionItem->id,
+                            'quantity' => $promotionQty,
+                            'standard_cost' => $promotionItem->standard_cost,
+                            'selling_price' => 0,
+                            'total_cost' => 0,
+                            'tax_manager_id' => $orderItem->tax_manager_id,
+                            'vat_rate' => $vatRate,
+                            'vat_amount' => 0,
+                            'total_cost_with_vat' => (0),
+                            'created_at' => Carbon::now(),
+                            'store_location_id' => $internalRequisition->to_store_id,
+                            'updated_at' => Carbon::now(),
+                            'hs_code' => $promotionItem->hs_code,
+                        ]);
+                    }
+                }
+            }
+            $center =  DeliveryCentres::find($routeCustomer->delivery_centres_id);
+            // if($center){
+            //     $center->is_active = true;
+            //     $center->save();
+            //     $otherCentres = DeliveryCentres::whereNotIn('id', [$center->id])->where('route_id', $route->id)->get();
+            //     foreach($otherCentres as $otherCenter){
+            //         $otherCenter->is_active = false;
+            //         $otherCenter->save();
+            //     }
+
+            // }
+
+            PerformPostSaleActions::dispatch($internalRequisition)->afterCommit();
+            DB::commit();
+
+            $internalRequisition->totalOrderAmountValue = $internalRequisition->getOrderTotal();
+            $internalRequisition->totalOrderAmount = format_amount_with_currency($internalRequisition->totalOrderAmountValue);
+
+            foreach ($internalRequisition->getRelatedItem as $item) {
+                $item->item_name = $item->getInventoryItemDetail->title;
+            }
+
+            return response()->json(['result' => 1, 'message' => 'Order created successfully', "order" => $internalRequisition]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return $this->jsonify(['result' => -1, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function markPaid(Request $request): JsonResponse
+    {
+        DB::beginTransaction();
+
+        try {
+            if (!$request->order_id) {
+                return $this->jsonify(['message' => 'Order ID field is required'], 422);
+            }
+
+            $user = JWTAuth::toUser($request->token);
+            if (!$user) {
+                return $this->jsonify(['message' => getTokenHasNoUserMessage()], 422);
+            }
+
+            $order = WaInternalRequisition::find($request->order_id);
+            if (!$order) {
+                return $this->jsonify(['message' => 'The provided Order ID is invalid'], 422);
+            }
+
+            $transfer = WaInventoryLocationTransfer::where('transfer_no', $order->requisition_no)->first();
+            $order->update(['status' => 'Paid']);
+            $transfer->update(['status' => 'Paid']);
+
+            UserLog::create([
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'module' => 'order_taking',
+                'activity' => "Marked invoice $order->requisition_no as paid",
+                'entity_id' => $order->id,
+                'user_agent' => 'Bizwiz APP',
+            ]);
+
+            DB::commit();
+
+            $newOrder = WaInternalRequisition::withCount('getRelatedItem as number_of_items')->find($request->order_id);
+            $relatedItems = $newOrder->getRelatedItem;
+            $totalSum = 0;
+            foreach ($relatedItems as $relatedItem) {
+                $totalSum += $relatedItem->total_cost_with_vat;
+                $relatedItem->item_name = $relatedItem->getInventoryItemDetail->title;
+
+                $transferItem = WaInventoryLocationTransferItem::where('wa_internal_requisition_item_id', $relatedItem->id)->first();
+                $submittedReturns = WaInventoryLocationTransferItemReturn::where('wa_inventory_location_transfer_item_id', $transferItem->id)->sum('return_quantity') ?? 0;
+                $receivedReturns = WaInventoryLocationTransferItemReturn::where('wa_inventory_location_transfer_item_id', $transferItem->id)->sum('received_quantity') ?? 0;
+                $relatedItem->total_returns = (int)$submittedReturns;
+                $relatedItem->accepted_returns = $receivedReturns;
+                $relatedItem->formatted_returned_figures = "$receivedReturns/$submittedReturns";
+            }
+
+            $newOrder->totalOrderAmount = $totalSum;
+            $newOrder->delivery_date = date('Y-m-d');
+
+            $customer = WaRouteCustomer::select('id', 'name', 'bussiness_name')->find($newOrder->wa_route_customer_id);
+            $newOrder->customer_name = $customer->name;
+            $newOrder->business_name = $customer->bussiness_name;
+
+            return $this->jsonify(['message' => 'Invoice updated successfully', 'order' => $newOrder], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return $this->jsonify(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    //save missing items
+    public function recordMissingItems($shiftId, $salesman_id, $invoiceNumber, $inventoryItemid, $orderQty, $qoh, $routeCustomer)
+    {
+        try {
+            $missingItem = new MissingItemsSale();
+            $missingItem->shift_id = $shiftId;
+            $missingItem->salesman_id = $salesman_id;
+            $missingItem->invoice_number = $invoiceNumber;
+            $missingItem->wa_inventory_item_id = $inventoryItemid;
+            $missingItem->order_quantity = $orderQty;
+            $missingItem->qoh = $qoh;
+            $missingItem->wa_route_customer_id = $routeCustomer;
+            $missingItem->save();
+
+        } catch (\Throwable $e) {
+
+        }
+
+    }
+
+    public function print(Request $request)
+    {
+        $slug = $request->slug;
+        $title = 'Sales Invoice Print';
+        $model = 'sales-invoice';
+        $breadcum = ['Sales Invoice' => route('sales-invoice.index'), 'Print' => ''];
+        $row = WaInternalRequisition::whereSlug($slug)->first();
+        $list = $row;
+        $itemsdata = WaInternalRequisitionItem::query()
+            ->select(
+                'wa_internal_requisition_items.*',
+                'wa_unit_of_measures.title as bin'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_internal_requisition_items.wa_inventory_item_id')
+            ->join('wa_inventory_location_uom', function ($join) use ($list) {
+                $join->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')
+                    ->where('wa_inventory_location_uom.location_id', $list->to_store_id);
+            })
+            ->join('wa_unit_of_measures', 'wa_inventory_location_uom.uom_id', '=', 'wa_unit_of_measures.id')
+            ->where('wa_internal_requisition_items.wa_internal_requisition_id', $list->id)
+            ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
+            ->get();
+        return view('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'row', 'list', 'itemsdata'));
+    }
+
+    public function exportToPdf($slug)
+    {
+        $title = 'Sales Invoice PDF';
+        $model = 'sales-invoice';
+        $breadcum = ['Sales Invoice' => route('sales-invoice.index'), 'PDF' => ''];
+        $list = WaInternalRequisition::whereSlug($slug)->first();
+        $itemsdata = WaInternalRequisitionItem::query()
+            ->select(
+                'wa_internal_requisition_items.*',
+                'wa_unit_of_measures.title as bin'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_internal_requisition_items.wa_inventory_item_id')
+            ->join('wa_inventory_location_uom', function ($join) use ($list) {
+                $join->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')
+                    ->where('wa_inventory_location_uom.location_id', $list->to_store_id);
+            })
+            ->join('wa_unit_of_measures', 'wa_inventory_location_uom.uom_id', '=', 'wa_unit_of_measures.id')
+            ->where('wa_internal_requisition_items.wa_internal_requisition_id', $list->id)
+            ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
+            ->get();
+
+        $pdf = \PDF::loadView('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'list', 'itemsdata'));
+        $report_name = 'sales_invoice_' . date('Y_m_d_H_i_A');
+        return $pdf->download($report_name . '.pdf');
+    }
+}

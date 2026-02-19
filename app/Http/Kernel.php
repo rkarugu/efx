@@ -86,5 +86,7 @@ class Kernel extends HttpKernel
         'set-session-lifetime' => \App\Http\Middleware\SetSessionLifetime::class,
         'auth.coop' => AuthenticateCoop::class,
         'branch-close'=>endOfDayLock::class,
+        'delivery-driver' => \App\Http\Middleware\DeliveryDriverMiddleware::class,
+        'delivery-driver-api' => \App\Http\Middleware\DeliveryDriverApiMiddleware::class,
     ];
 }

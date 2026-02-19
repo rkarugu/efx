@@ -254,7 +254,7 @@ $totalAmount = 0;
             
         </tbody>
     </table>
-    <p>Goods have been loaded as per the above delivery sheet and we should ensure that customers shall pay for the goods to the company(Kanini Haraka) till number</p>
+    <p>Goods have been loaded as per the above delivery sheet and we should ensure that customers shall pay for the goods to the company(Kanini Chapchap) till number</p>
     <p>We confirm that we shall be fully liable in case of any loss of money due to omission or negligence.</p>
     <table style="font-size: 12px; margin-bottom: 10px;">
         <tbody>

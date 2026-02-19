@@ -5,14 +5,14 @@ namespace App\Http\Middleware;
 use App\Model\Setting;
 use App\Models\WaStoreReturn;
 use Closure;
-use Illuminate\Http\Request;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckPendingReturns
 {
-    public function handle(Request $request, Closure $next): Response
+    public function handle(HttpRequest $request, Closure $next): Response
     {
         if (!Auth::check()) {
             return $next($request);

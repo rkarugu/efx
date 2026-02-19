@@ -94,6 +94,46 @@ class WaShiftController extends Controller
                         return $this->jsonify(['status' => false, 'message' => 'The salesman does not belong to this route'], 422);
                     }
 
+                    // Auto-close shifts that are older than 24 hours or past 7 PM
+                    $now = Carbon::now();
+                    $yesterday = $now->copy()->subDay();
+                    $sevenPmToday = $now->copy()->setTime(19, 0, 0); // 7 PM today
+                    
+                    // Get all open shifts for this user
+                    $openShifts = $user->salesmanShifts()->where('status', 'open')->get();
+                    
+                    foreach ($openShifts as $openShift) {
+                        $shiftStartTime = Carbon::parse($openShift->start_time);
+                        $shouldAutoClose = false;
+                        
+                        // Close if shift is older than 24 hours
+                        if ($shiftStartTime->lt($yesterday)) {
+                            $shouldAutoClose = true;
+                        }
+                        // Close if shift started before 7 PM yesterday and it's now past 7 PM today
+                        elseif ($shiftStartTime->lt($sevenPmToday->copy()->subDay()) && $now->gte($sevenPmToday)) {
+                            $shouldAutoClose = true;
+                        }
+                        // Close if shift started today but it's now past 7 PM
+                        elseif ($shiftStartTime->isToday() && $now->gte($sevenPmToday)) {
+                            $shouldAutoClose = true;
+                        }
+                        
+                        if ($shouldAutoClose) {
+                            $openShift->status = 'close';
+                            $openShift->closed_time = $now;
+                            $openShift->save();
+                            
+                            \Log::info('Auto-closed shift', [
+                                'shift_id' => $openShift->id,
+                                'salesman_id' => $user->id,
+                                'start_time' => $shiftStartTime,
+                                'closed_time' => $now
+                            ]);
+                        }
+                    }
+                    
+                    // Check again for open shifts after auto-close
                     $salesmanHasOpenShift = $user->salesmanShifts()->where('status', 'open')->first();
                     if ($salesmanHasOpenShift) {
                         return $this->jsonify(['message' => 'Sorry, you already have an open shift.', 'status' => false], 422);
@@ -110,7 +150,7 @@ class WaShiftController extends Controller
                         ->whereDate('created_at', '=', Carbon::now()->toDateString())
                         ->first();
                     if ($salesmanHadARouteShiftToday) {
-                        $shiftType = $salesmanHadARouteShiftToday->shift_type == 'onsite' ? 'on-site' : 'off-site';
+                        $shiftType = $salesmanHadARouteShiftToday->shift_type == 'onsite' ? 'onsite' : 'offsite';
                         return $this->jsonify([
                             'message' => "Sorry, you already have an $shiftType shift for this route today. Please request for it to be re-opened.",
                             'status' => false,
@@ -471,16 +511,78 @@ class WaShiftController extends Controller
             $shifts = [];
             switch ($user->role_id) {
                 case 4:
-                    $shifts = SalesmanShift::latest()->where('salesman_id', $user->id);
-                    if ($request->search_date) {
-                        $shifts = $shifts->whereDate('start_time', '=', Carbon::parse($request->search_date)->toDateString());
+                    // Get today's day of week (0 = Sunday, 1 = Monday, etc.)
+                    $today = Carbon::now()->dayOfWeek;
+                    
+                    // Get routes assigned to this salesman that have order-taking scheduled for today
+                    $scheduledRoutes = $user->routes()
+                        ->whereRaw("FIND_IN_SET(?, order_taking_days)", [$today])
+                        ->get();
+                    
+                    $shiftsData = [];
+
+                    // Always include any open shifts (even from previous days) so the app can present them for closure
+                    $openShifts = SalesmanShift::where('salesman_id', $user->id)
+                        ->where('status', 'open')
+                        ->latest('id')
+                        ->get();
+                    $openRouteIds = $openShifts->pluck('route_id')->toArray();
+
+                    foreach ($openShifts as $openShift) {
+                        $openShift->setAppends([]);
+                        $shiftsData[] = $this->getSalesmanShiftData($openShift);
                     }
-
-                    $shifts = $shifts->cursorPaginate(3)->through(function (SalesmanShift $shift) {
-                        $shift->setAppends([]);
-                        return $this->getSalesmanShiftData($shift);
-                    });
-
+                    
+                    // For each scheduled route, check if a shift exists, otherwise show as scheduled
+                    foreach ($scheduledRoutes as $route) {
+                        if (in_array($route->id, $openRouteIds)) {
+                            continue;
+                        }
+                        $existingShift = SalesmanShift::where('salesman_id', $user->id)
+                            ->where('route_id', $route->id)
+                            ->whereDate('created_at', Carbon::today())
+                            ->latest('id')
+                            ->first();
+                        
+                        if ($existingShift) {
+                            // Shift already exists, return actual shift data
+                            $existingShift->setAppends([]);
+                            $shiftsData[] = $this->getSalesmanShiftData($existingShift);
+                        } else {
+                            // No shift created yet, return scheduled shift data
+                            $customersCount = $route->waRouteCustomer()->count();
+                            $shiftsData[] = [
+                                'id' => null,
+                                'shift_id' => "Scheduled - {$route->route_name}",
+                                'route_id' => $route->id,
+                                'route' => $route->route_name,
+                                'route_name' => $route->route_name,
+                                'shift_type' => 'scheduled',
+                                'status' => 'scheduled',
+                                'created_at' => Carbon::now(),
+                                'updated_at' => Carbon::now(),
+                                'closed_time' => null,
+                                'start_time' => null,
+                                'total_orders' => 0,
+                                'total_orders_amount' => format_amount_with_currency(0),
+                                'total_returns_amount' => format_amount_with_currency(0),
+                                'total_discount_amount' => format_amount_with_currency(0),
+                                'shift_duration' => '0 minutes',
+                                'target_amount' => format_amount_with_currency($route->tonnage_target ?? 0),
+                                'target_balance' => format_amount_with_currency(0),
+                                'total_collections' => format_amount_with_currency(0),
+                                'shops_count' => "$customersCount Shops",
+                                'centres_count' => "0 Centers",
+                                'distance' => "0 km",
+                                'has_returns' => false,
+                            ];
+                        }
+                    }
+                    
+                    // Return as paginated response format
+                    $shifts = new \Illuminate\Support\Collection($shiftsData);
+                    return response()->json(['status' => true, 'data' => $shifts], 200);
+                    
                     break;
                 case 6:
                     $shifts = DeliverySchedule::latest()->where('driver_id', $user->id)->whereIn('status', ['in_progress', 'finished']);
@@ -704,6 +806,8 @@ class WaShiftController extends Controller
 
         $distance = $route->sections->sum('distance_estimate');
         $shift->distance = round($distance / 1000, 2) . " km";
+        $shift->route_name = $route->route_name;
+        $shift->route = $route->route_name;
 
         return $shift;
     }

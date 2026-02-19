@@ -255,9 +255,9 @@ class InventoryLocationTransferController extends Controller
 
                 $itemTotal = manageAmountFormat($itemTotal);
                 $item->selling_price = manageAmountFormat($item->selling_price);
-                $line = "$inventoryItem->title $item->quantity $item->selling_price $itemTotal";
+                $line = "{$inventoryItem->title} {$item->quantity} {$item->selling_price} {$itemTotal}";
                 if ($inventoryItem->hs_code) {
-                    $line = "$inventoryItem->hs_code " . $line;
+                    $line = "{$inventoryItem->hs_code} " . $line;
                 }
 
                 $payload['items_list'][] = $line;
@@ -333,9 +333,9 @@ class InventoryLocationTransferController extends Controller
 
                 $itemTotal = manageAmountFormat($itemTotal);
                 $item->selling_price = manageAmountFormat($item->selling_price);
-                $line = "$inventoryItem->slug $item->quantity $item->selling_price $itemTotal";
+                $line = "{$inventoryItem->slug} {$item->quantity} {$item->selling_price} {$itemTotal}";
                 if ($inventoryItem->hs_code) {
-                    $line = "$inventoryItem->hs_code " . $line;
+                    $line = "{$inventoryItem->hs_code} " . $line;
                 }
 
                 $payload['items_list'][] = $line;
@@ -1547,14 +1547,14 @@ class InventoryLocationTransferController extends Controller
             ->first();
 
         if ($otps) {
-            return json_encode(['status' => 0, 'message' => "A verification code already exists for $request->invoice"]);
+            return json_encode(['status' => 0, 'message' => "A verification code already exists for {$request->invoice}"]);
         }
 
         $route = DB::table('routes')->where('route_name', $request->route)->first();
         if ($route) {
             $phoneNumber = DB::table('wa_customers')->where('route_id', $route->id)->first()->telephone;
             $otp = mt_rand(100000, 999999);
-            $message = "Store $request->bin has requested to reject return $request->invoice for route $route->route_name. Use the code $otp to approve.";
+            $message = "Store {$request->bin} has requested to reject return {$request->invoice} for route {$route->route_name}. Use the code $otp to approve.";
             DB::table('otp')->insert([
                 'phone_number' => $phoneNumber,
                 'otp' => $otp,
@@ -1727,7 +1727,7 @@ class InventoryLocationTransferController extends Controller
                     $binId = WaInventoryLocationUom::where('inventory_id', $inventoryItem->id)->where('location_id', $user->wa_location_and_store_id)->first()->uom_id;
                     $store = WaUnitOfMeasure::find($binId);
                     $route = Route::find($transfer->route_id);
-                    $msg = "The following return items have been received in $store->title from $route->route_name: ";
+                    $msg = "The following return items have been received in {$store->title} from {$route->route_name}: ";
                     $newOrderQty = $requisitionItem->quantity - $incomingQuantity;
                     if ($requisitionItem->discount > 0) {
                         $returnedDiscount += $requisitionItem->discount;
@@ -1750,7 +1750,7 @@ class InventoryLocationTransferController extends Controller
                             ->first();
                         if ($discountBand) {
                             $newDiscount = $discountBand->discount_amount * $newOrderQty;
-                            $newDiscountDescription = "$discountBand->discount_amount discount for quantity between $discountBand->from_quantity and $discountBand->to_quantity";
+                            $newDiscountDescription = "{$discountBand->discount_amount} discount for quantity between {$discountBand->from_quantity} and {$discountBand->to_quantity}";
                         }
 
                         $requisitionItem->update([
@@ -1778,7 +1778,7 @@ class InventoryLocationTransferController extends Controller
                         'stock_id_code' => $inventoryItem->stock_id_code,
                         'wa_inventory_item_id' => $inventoryItem->id,
                         'price' => $transferItem->selling_price,
-                        'refrence' => "$transfer->route $transfer->transfer_no RETURN",
+                        'refrence' => "{$transfer->route} {$transfer->transfer_no} RETURN",
                         'qauntity' => $incomingQuantity,
                         'new_qoh' => $currentQoh + $incomingQuantity,
                         'standard_cost' => $transferItem->standard_cost,
@@ -1792,22 +1792,29 @@ class InventoryLocationTransferController extends Controller
                     $accountingPeriod = WaAccountingPeriod::where('is_current_period', '1')->first();
                     $series_module = WaNumerSeriesCode::where('module', 'INTERNAL REQUISITIONS')->first();
                     $routeCustomer = WaRouteCustomer::with('route')->find($invoice->wa_route_customer_id);
-                    if (!$routeCustomer) {
-                        $routeCustomer = WaCustomer::find($invoice->customer_id);
+                    $customerName = '';
+                    
+                    if ($routeCustomer && is_object($routeCustomer)) {
+                        $customerName = $routeCustomer->bussiness_name ?? $routeCustomer->name ?? '';
+                    } else {
+                        $waCustomer = WaCustomer::find($invoice->customer_id);
+                        $customerName = $waCustomer?->customer_name ?? '';
                     }
 
+                    $customer = WaCustomer::find($transfer->get_requisition->customer_id);
+                    
                     WaDebtorTran::insert([
                         'salesman_id' => $transfer->to_store_location_id,
                         'salesman_user_id' => $transfer->user_id,
                         'type_number' => $series_module?->type_number,
                         'wa_customer_id' => $transfer->get_requisition->customer_id,
-                        'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                        'customer_number' => $customer?->customer_code ?? '',
                         'trans_date' => Carbon::now()->toDateString(),
                         'input_date' => Carbon::now()->toDateTimeString(),
                         'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                         'shift_id' => $transfer->shift_id,
-                        'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                        'reference' => "$transfer->route $transfer->transfer_no RETURN",
+                        'invoice_customer_name' => $customerName,
+                        'reference' => "{$transfer->route} {$transfer->transfer_no} RETURN",
                         'amount' => - ($returnedTotal),
                         'document_no' => $returnNumber,
                         'updated_at' => date('Y-m-d H:i:s'),
@@ -1821,13 +1828,13 @@ class InventoryLocationTransferController extends Controller
                             'salesman_user_id' => $transfer->user_id,
                             'type_number' => $series_module?->type_number,
                             'wa_customer_id' => $transfer->get_requisition->customer_id,
-                            'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                            'customer_number' => $customer?->customer_code ?? '',
                             'trans_date' => Carbon::now()->toDateString(),
                             'input_date' => Carbon::now()->toDateTimeString(),
                             'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                             'shift_id' => $transfer->shift_id,
-                            'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                            'reference' => "$transfer->route $transfer->transfer_no DISCOUNT RETURN",
+                            'invoice_customer_name' => $customerName,
+                            'reference' => "{$transfer->route} {$transfer->transfer_no} DISCOUNT RETURN",
                             'amount' => ($returnedDiscount),
                             'document_no' => $returnNumber,
                             'updated_at' => date('Y-m-d H:i:s'),
@@ -1843,13 +1850,13 @@ class InventoryLocationTransferController extends Controller
                             'salesman_user_id' => $transfer->user_id,
                             'type_number' => $series_module?->type_number,
                             'wa_customer_id' => $transfer->get_requisition->customer_id,
-                            'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                            'customer_number' => $customer?->customer_code ?? '',
                             'trans_date' => Carbon::now()->toDateString(),
                             'input_date' => Carbon::now()->toDateTimeString(),
                             'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                             'shift_id' => $transfer->shift_id,
-                            'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                            'reference' => "$transfer->route $transfer->transfer_no DISCOUNT ALLOWED",
+                            'invoice_customer_name' => $customerName,
+                            'reference' => "{$transfer->route} {$transfer->transfer_no} DISCOUNT ALLOWED",
                             'amount' => - ($recalculatedDiscount),
                             'document_no' => $transfer->transfer_no,
                             'updated_at' => date('Y-m-d H:i:s'),
@@ -1887,7 +1894,9 @@ class InventoryLocationTransferController extends Controller
             return json_encode(['status' => 1, 'message' => "Received - $received_count item(s), Returned -  $returned item(s) "]);
         } catch (\Throwable $e) {
             DB::rollBack();
-            return json_encode(['status' => 0, 'message' => $e->getMessage()]);
+            \Log::error('Return Processing Error: ' . $e->getMessage() . ' at line ' . $e->getLine() . ' in file ' . $e->getFile());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return json_encode(['status' => 0, 'message' => $e->getMessage() . ' (Line: ' . $e->getLine() . ')']);
         }
     }
 
@@ -1960,7 +1969,7 @@ class InventoryLocationTransferController extends Controller
                         ->first();
                     if ($discountBand) {
                         $newDiscount = $discountBand->discount_amount * $newOrderQty;
-                        $newDiscountDescription = "$discountBand->discount_amount discount for quantity between $discountBand->from_quantity and $discountBand->to_quantity";
+                        $newDiscountDescription = "{$discountBand->discount_amount} discount for quantity between {$discountBand->from_quantity} and {$discountBand->to_quantity}";
                     }
 
                     $requisitionItem->update([
@@ -1988,7 +1997,7 @@ class InventoryLocationTransferController extends Controller
                     'stock_id_code' => $inventoryItem->stock_id_code,
                     'wa_inventory_item_id' => $inventoryItem->id,
                     'price' => $transferItem->selling_price,
-                    'refrence' => "$transfer->route $transfer->transfer_no RETURN",
+                    'refrence' => "{$transfer->route} {$transfer->transfer_no} RETURN",
                     'qauntity' => $incomingQuantity,
                     'new_qoh' => $currentQoh + $incomingQuantity,
                     'standard_cost' => $transferItem->standard_cost,
@@ -2003,19 +2012,29 @@ class InventoryLocationTransferController extends Controller
             $accountingPeriod = WaAccountingPeriod::where('is_current_period', '1')->first();
             $series_module = WaNumerSeriesCode::where('module', 'INTERNAL REQUISITIONS')->first();
             $routeCustomer = WaRouteCustomer::with('route')->find($invoice->wa_route_customer_id);
+            $customerName = '';
+            
+            if ($routeCustomer && is_object($routeCustomer)) {
+                $customerName = $routeCustomer->bussiness_name ?? $routeCustomer->name ?? '';
+            } else {
+                $waCustomer = WaCustomer::find($invoice->customer_id);
+                $customerName = $waCustomer?->customer_name ?? '';
+            }
 
+            $customer = WaCustomer::find($transfer->get_requisition->customer_id);
+            
             WaDebtorTran::insert([
                 'salesman_id' => $transfer->to_store_location_id,
                 'salesman_user_id' => $transfer->user_id,
                 'type_number' => $series_module?->type_number,
                 'wa_customer_id' => $transfer->get_requisition->customer_id,
-                'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                'customer_number' => $customer?->customer_code ?? '',
                 'trans_date' => Carbon::now()->toDateString(),
                 'input_date' => Carbon::now()->toDateTimeString(),
                 'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                 'shift_id' => $transfer->shift_id,
-                'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                'reference' => "$transfer->route $transfer->transfer_no RETURN",
+                'invoice_customer_name' => $customerName,
+                'reference' => "{$transfer->route} {$transfer->transfer_no} RETURN",
                 'amount' => - ($returnedTotal),
                 'document_no' => $returnNumber,
                 'updated_at' => date('Y-m-d H:i:s'),
@@ -2028,13 +2047,13 @@ class InventoryLocationTransferController extends Controller
                     'salesman_user_id' => $transfer->user_id,
                     'type_number' => $series_module?->type_number,
                     'wa_customer_id' => $transfer->get_requisition->customer_id,
-                    'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                    'customer_number' => $customer?->customer_code ?? '',
                     'trans_date' => Carbon::now()->toDateString(),
                     'input_date' => Carbon::now()->toDateTimeString(),
                     'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                     'shift_id' => $transfer->shift_id,
-                    'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                    'reference' => "$transfer->route $transfer->transfer_no DISCOUNT RETURN",
+                    'invoice_customer_name' => $customerName,
+                    'reference' => "{$transfer->route} {$transfer->transfer_no} DISCOUNT RETURN",
                     'amount' => ($returnedDiscount),
                     'document_no' => $returnNumber,
                     'updated_at' => date('Y-m-d H:i:s'),
@@ -2048,13 +2067,13 @@ class InventoryLocationTransferController extends Controller
                     'salesman_user_id' => $transfer->user_id,
                     'type_number' => $series_module?->type_number,
                     'wa_customer_id' => $transfer->get_requisition->customer_id,
-                    'customer_number' => WaCustomer::find($transfer->get_requisition->customer_id)->customer_code,
+                    'customer_number' => $customer?->customer_code ?? '',
                     'trans_date' => Carbon::now()->toDateString(),
                     'input_date' => Carbon::now()->toDateTimeString(),
                     'wa_accounting_period_id' => $accountingPeriod ? $accountingPeriod->id : null,
                     'shift_id' => $transfer->shift_id,
-                    'invoice_customer_name' => "$routeCustomer->bussiness_name",
-                    'reference' => "$transfer->route $transfer->transfer_no DISCOUNT ALLOWED",
+                    'invoice_customer_name' => $customerName,
+                    'reference' => "{$transfer->route} {$transfer->transfer_no} DISCOUNT ALLOWED",
                     'amount' => - ($recalculatedDiscount),
                     'document_no' => $transfer->transfer_no,
                     'updated_at' => date('Y-m-d H:i:s'),

@@ -62,6 +62,7 @@ use App\Model\WaInventoryLocationTransfer;
 use App\Model\WaRouteCustomer;
 use App\Model\WaSalesOrders;
 use App\Model\WaSalesOrderItems;
+use App\Models\RoutePricing;
 use Carbon\Carbon;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Storage;
@@ -71,7 +72,6 @@ use Illuminate\Support\Facades\Log;
 use function PHPUnit\Framework\isInstanceOf;
 use Image;
 use Illuminate\Support\Facades\File;
-
 
 class SalesController extends Controller
 {
@@ -502,6 +502,17 @@ Pending Bills Per Waiter
         } else {
             $getUserData = User::where('id', $request->user_id)->first();
 
+            $routeId = null;
+            $restaurantId = null;
+            if ($getUserData) {
+                $openShift = SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first();
+                $routeId = $openShift?->route_id ?? $getUserData->route ?? null;
+                if ($routeId) {
+                    $route = Route::find($routeId);
+                    $restaurantId = $route->restaurant_id ?? null;
+                }
+            }
+
             $data = WaInventoryItem::select(
                 'id',
                 'stock_id_code',
@@ -516,6 +527,12 @@ Pending Bills Per Waiter
                 ->get();
 
             foreach ($data as $key => $value) {
+                if ($routeId) {
+                    $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                    if ($routePrice !== null) {
+                        $data[$key]->selling_price = $routePrice;
+                    }
+                }
                 $data[$key]->image = "http://bizwizdevinstance.com/public/uploads/inventory_items/" . $value->image;
             }
             return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
@@ -525,75 +542,93 @@ Pending Bills Per Waiter
 
     public function apiGetInventoryItems(Request $request)
     {
+        // Increase timeout for this endpoint
+        set_time_limit(120);
+        
         $getUserData = JWTAuth::toUser($request->token);
         $appUrl = env('APP_URL');
-        //        $items = WaInventoryItem::withWhereHas('latestStockMove', function ($query) {
-        //            $query->where('new_qoh', '>', 0);
-        //        })->select(
-        //            'id',
-        //            'title',
-        //            'stock_id_code',
-        //            'description',
-        //            'standard_cost',
-        //            'selling_price',
-        //            'image',
-        //            'minimum_order_quantity',
-        //            DB::raw("(SELECT `category_description` from `wa_inventory_categories` where `id` = `wa_inventory_items`.`wa_inventory_category_id`) as category_detail"),
-        //        )
-        //            ->where('wa_inventory_category_id', $request->sub_category_id)
-        //            ->where('title', 'LIKE', "%{$request->search_query}%")
-        //            ->orderBy('title')
-        //            ->get()
-        //            ->map(function (WaInventoryItem $item) use ($appUrl) {
-        //                $item->image = "$appUrl/uploads/inventory_items/" . $item->image;
-        //                $item->totalQty = (int)$item->latestStockMove->new_qoh;
-        //                unset($item->latestStockMove);
-        //
-        //                return $item;
-        //            });
+        $openShift = $getUserData ? SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first() : null;
+        $routeId = $openShift?->route_id ?? $getUserData?->route ?? null;
+        $route = $routeId ? Route::find($routeId) : null;
+        $restaurantId = $route?->restaurant_id ?? null;
+        $storeLocationId = $request->store_location_id ?? ($getUserData->wa_location_and_store_id ?? null);
+        
+        // Get limit from request, default to 50
+        $limit = $request->limit ?? 50;
 
-        $data = WaInventoryItem::with('getAllFromStockMoves')->select(
-            'id',
-            'title',
-            'stock_id_code',
-            'description',
-            'standard_cost',
-            'selling_price',
-            'image',
-            'minimum_order_quantity',
-            DB::raw("(SELECT `category_description` from `wa_inventory_categories` where `id` = `wa_inventory_items`.`wa_inventory_category_id`) as category_detail")
-        )
-            ->where('id', 25)
-            ->get()->map(function ($item) {
-                $item->totalQty = $item->getAllFromStockMoves()->sum('qauntity');
-                return $item;
-            });
-
-        $data = WaInventoryItem::select([
-            //  '*',
+        $query = WaInventoryItem::select([
             'wa_inventory_items.*',
-            DB::RAW('(select SUM(wa_stock_moves.qauntity) FROM wa_stock_moves where wa_stock_moves.wa_inventory_item_id = wa_inventory_items.id AND wa_stock_moves.wa_location_and_store_id = ' . ($request->store_location_id ?? 'wa_inventory_items.store_location_id') . ') as quantity'),
+            DB::RAW('(select SUM(wa_stock_moves.qauntity) FROM wa_stock_moves where wa_stock_moves.stock_id_code = wa_inventory_items.stock_id_code AND wa_stock_moves.wa_location_and_store_id = ' . ($storeLocationId ? "'" . $storeLocationId . "'" : 'wa_inventory_items.store_location_id') . ') as qoh'),
         ])
             ->join('pack_sizes', 'wa_inventory_items.pack_size_id', '=', 'pack_sizes.id')
             ->where('pack_sizes.can_order', 1)
-            ->where(function ($q) use ($request) {
-                if ($request->search) {
-                    $q->where('wa_inventory_items.title', 'LIKE', "%$request->search%");
-                    $q->orWhere('stock_id_code', 'LIKE', "%$request->search%");
-                }
-            })->where(function ($e) use ($request) {
-                if ($request->store_c) {
-                    $e->where('store_c_deleted', 0);
-                }
-            })->limit(15)->get();
+            ->where('wa_inventory_items.status', 1);
+        
+        // Apply search filter if provided
+        if ($request->search && trim($request->search) !== '') {
+            $searchTerm = trim($request->search);
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('wa_inventory_items.title', 'LIKE', "%$searchTerm%")
+                  ->orWhere('wa_inventory_items.stock_id_code', 'LIKE', "%$searchTerm%");
+            });
+        }
+        
+        // Apply store filter if provided
+        if ($request->store_c) {
+            $query->where('store_c_deleted', 0);
+        }
+        
+        $data = $query->limit($limit)->get();
 
 
         $appUrl = env('APP_URL');
         foreach ($data as $key => $value) {
+            if ($routeId) {
+                $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                if ($routePrice !== null) {
+                    $data[$key]->selling_price = $routePrice;
+                }
+            }
             $data[$key]->image = "$appUrl/uploads/inventory_items/" . $value->image;
-            $data[$key]->has_half = "$appUrl/uploads/inventory_items/" . $value->image;
             $data[$key]->has_quotas = hasQuotas($value->item_count);
             $data[$key]->has_half = hasHalfs($value->item_count);
+            
+            // Get approved discount bands for this item
+            $discountBands = \App\DiscountBand::where('inventory_item_id', $value->id)
+                ->where('status', 'APPROVED')
+                ->orderBy('from_quantity', 'asc')
+                ->get(['from_quantity', 'to_quantity', 'discount_amount']);
+            
+            $data[$key]->discount_bands = $discountBands;
+            
+            // Get active promotions for this item
+            $promotion = \App\ItemPromotion::where('inventory_item_id', $value->id)
+                ->where('status', 'active')
+                ->whereNotNull('promotion_item_id')
+                ->where(function ($query) {
+                    $today = \Carbon\Carbon::today();
+                    $query->where('from_date', '<=', $today)
+                        ->where(function ($subQuery) use ($today) {
+                            $subQuery->where('to_date', '>=', $today)
+                                     ->orWhereNull('to_date');
+                        });
+                })
+                ->with(['promotionItem:id,title', 'promotionType:id,name'])
+                ->first();
+            
+            if ($promotion) {
+                $data[$key]->promotion = [
+                    'sale_quantity' => $promotion->sale_quantity,
+                    'promotion_quantity' => $promotion->promotion_quantity,
+                    'promotion_item_id' => $promotion->promotion_item_id,
+                    'promotion_item_name' => $promotion->promotionItem->title ?? null,
+                    'promotion_type' => $promotion->promotionType->name ?? null,
+                    'from_date' => $promotion->from_date,
+                    'to_date' => $promotion->to_date,
+                ];
+            } else {
+                $data[$key]->promotion = null;
+            }
         }
         return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
     }
@@ -601,6 +636,11 @@ Pending Bills Per Waiter
     public function apiGetFoodInventoryItem(Request $request)
     {
         $getUserData = JWTAuth::toUser($request->token);
+
+        $openShift = $getUserData ? SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first() : null;
+        $routeId = $openShift?->route_id ?? $getUserData?->route ?? null;
+        $route = $routeId ? Route::find($routeId) : null;
+        $restaurantId = $route?->restaurant_id ?? null;
 
         // dd($getUserData->wa_location_and_store_id);
 
@@ -623,6 +663,12 @@ Pending Bills Per Waiter
             ->get();
 
         foreach ($data as $key => $value) {
+            if ($routeId) {
+                $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                if ($routePrice !== null) {
+                    $data[$key]->selling_price = $routePrice;
+                }
+            }
             $data[$key]->image = "http://bizwizdevinstance.com/public/uploads/inventory_items/" . $value->image;
         }
 
@@ -634,6 +680,11 @@ Pending Bills Per Waiter
     public function apiGetOtherInventoryItem(Request $request)
     {
         $getUserData = JWTAuth::toUser($request->token);
+
+        $openShift = $getUserData ? SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first() : null;
+        $routeId = $openShift?->route_id ?? $getUserData?->route ?? null;
+        $route = $routeId ? Route::find($routeId) : null;
+        $restaurantId = $route?->restaurant_id ?? null;
 
 
         $data = WaInventoryItem::whereHas('getInventoryCategoryDetail.getStockTypecategory', function ($query) {
@@ -654,6 +705,12 @@ Pending Bills Per Waiter
             ->get();
 
         foreach ($data as $key => $value) {
+            if ($routeId) {
+                $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                if ($routePrice !== null) {
+                    $data[$key]->selling_price = $routePrice;
+                }
+            }
             $data[$key]->image = "http://bizwizdevinstance.com/public/uploads/inventory_items/" . $value->image;
         }
         return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
@@ -670,6 +727,17 @@ Pending Bills Per Waiter
             return response()->json(['status' => false, 'message' => $error]);
         }
         $getUserData = User::where('id', $request->user_id)->first();
+
+        $routeId = null;
+        $restaurantId = null;
+        if ($getUserData) {
+            $openShift = SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first();
+            $routeId = $openShift?->route_id ?? $getUserData->route ?? null;
+            if ($routeId) {
+                $route = Route::find($routeId);
+                $restaurantId = $route->restaurant_id ?? null;
+            }
+        }
 
         $data = WaInventoryItem::select([
             'id',
@@ -689,6 +757,15 @@ Pending Bills Per Waiter
                 }
             })
             ->limit(50)->get();
+
+        foreach ($data as $key => $value) {
+            if ($routeId) {
+                $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                if ($routePrice !== null) {
+                    $data[$key]->selling_price = $routePrice;
+                }
+            }
+        }
         return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
     }
 
@@ -704,6 +781,17 @@ Pending Bills Per Waiter
         } else {
             $getUserData = User::where('id', $request->user_id)->first();
 
+            $routeId = null;
+            $restaurantId = null;
+            if ($getUserData) {
+                $openShift = SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first();
+                $routeId = $openShift?->route_id ?? $getUserData->route ?? null;
+                if ($routeId) {
+                    $route = Route::find($routeId);
+                    $restaurantId = $route->restaurant_id ?? null;
+                }
+            }
+
             $data = WaInventoryItem::select([
                 'id',
                 'stock_id_code',
@@ -717,6 +805,15 @@ Pending Bills Per Waiter
             ])
                 ->where('stock_id_code', $request->stockcode)
                 ->get();
+
+            foreach ($data as $key => $value) {
+                if ($routeId) {
+                    $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                    if ($routePrice !== null) {
+                        $data[$key]->selling_price = $routePrice;
+                    }
+                }
+            }
             return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
         }
     }
@@ -733,6 +830,17 @@ Pending Bills Per Waiter
         } else {
             $getUserData = User::where('id', $request->user_id)->first();
 
+            $routeId = null;
+            $restaurantId = null;
+            if ($getUserData) {
+                $openShift = SalesmanShift::where('salesman_id', $getUserData->id)->where('status', 'open')->latest('id')->first();
+                $routeId = $openShift?->route_id ?? $getUserData->route ?? null;
+                if ($routeId) {
+                    $route = Route::find($routeId);
+                    $restaurantId = $route->restaurant_id ?? null;
+                }
+            }
+
             $data = WaInventoryItem::select([
                 'id',
                 'stock_id_code',
@@ -747,12 +855,25 @@ Pending Bills Per Waiter
                 ->having('totalQty', '>', 0)
                 ->where('stock_id_code', $request->stockcode)
                 ->get();
+
+            foreach ($data as $key => $value) {
+                if ($routeId) {
+                    $routePrice = RoutePricing::resolvePrice((int) $value->id, (int) $routeId, $restaurantId);
+                    if ($routePrice !== null) {
+                        $data[$key]->selling_price = $routePrice;
+                    }
+                }
+            }
             return response()->json(['status' => true, 'message' => 'Inventory Items.', 'data' => $data]);
         }
     }
 
     public function getSalesManLogin(Request $request)
     {
+        if (!config('salesman.allow_mobile_api', true)) {
+            return response()->json(['status' => false, 'message' => 'Salesman mobile access has been disabled.'], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'Email_PhoneNo' => 'required',
             'password' => 'required',
@@ -3490,6 +3611,13 @@ Pending Bills Per Waiter
             return response()->json(['status' => false, 'message' => $error]);
         } else {
             $shiftlist = WaShift::where('status', 'open')->where('salesman_id', $request->get('user_id'))->get();
+            
+            // Add route name to each shift (route field already contains the route name)
+            $shiftlist = $shiftlist->map(function($shift) {
+                $shift->route_name = $shift->route;
+                return $shift;
+            });
+            
             return response()->json(['status' => true, 'message' => 'Shift List.', 'data' => $shiftlist]);
         }
     }
@@ -3799,8 +3927,26 @@ Pending Bills Per Waiter
             }
 
             $appUrl = env('APP_URL');
+            
+            // Check for open shift in salesman_shifts OR wa_shifts
             $currentShift = SalesmanShift::latest()->where('status', 'open')
                 ->where('salesman_id', $user->id)->first();
+            
+            // If no shift in salesman_shifts, check wa_shifts
+            if (!$currentShift) {
+                $waShift = WaShift::latest()->where('status', 'open')
+                    ->where('salesman_id', $user->id)->first();
+                
+                if ($waShift) {
+                    // Get route from wa_shift
+                    $route = Route::where('route_name', $waShift->route)->first();
+                    if ($route) {
+                        // Create a temporary shift object with route_id
+                        $currentShift = (object)['route_id' => $route->id];
+                    }
+                }
+            }
+            
             if (!$currentShift) {
                 $shops = [
                     'data' => [],
@@ -3831,7 +3977,7 @@ Pending Bills Per Waiter
                 }
 
                 $shops = $shops->orderBy('created_at', 'DESC')
-                    ->cursorPaginate(14)
+                    ->cursorPaginate(100)
                     ->through(function (WaRouteCustomer $shop) use ($appUrl, $request, $user, $route) {
                         if ($shop->image_url) {
                             $shop->photo = "$appUrl/uploads/shops/" . $shop->image_url;
@@ -4012,7 +4158,21 @@ Pending Bills Per Waiter
             $error = $this->validationHandle($validator->messages());
             return response()->json(['status' => false, 'message' => $error]);
         } else {
+            // Update shift status to closed
             WaShift::where('id', $request->shift_id)->update(['status' => 'close']);
+            
+            // Get the salesman shift record to dispatch jobs
+            $waShift = WaShift::find($request->shift_id);
+            $shift = $waShift?->salesmanShift;
+            
+            if ($shift) {
+                // Dispatch job to create loading schedule (parking list)
+                \App\Jobs\PrepareStoreParkingList::dispatch($shift);
+                
+                // Dispatch job to create delivery schedule
+                \App\Jobs\CreateDeliverySchedule::dispatch($shift);
+            }
+            
             return response()->json(['status' => true, 'message' => 'Shift closed successfully.']);
         }
     }
@@ -4030,7 +4190,6 @@ Pending Bills Per Waiter
 
     public function getShiftSalesSummary(Request $request)
     {
-
         $validator = Validator::make($request->all(), [
             'user_id' => 'required',
         ]);
@@ -4038,21 +4197,82 @@ Pending Bills Per Waiter
             $error = $this->validationHandle($validator->messages());
             return response()->json(['status' => false, 'message' => $error]);
         } else {
-            $date = \Carbon\Carbon::today()->subDays(7);
-
-            //$getshiftdata =    
-            $mydebtorlist = WaCustomer::select('customer_code', 'order_date', 'customer_name', 'wa_cash_sales.order_date as trans_date', 'wa_cash_sales.cash_sales_number', 'wa_cash_sales.id as cash_sales_id')
-                ->join('wa_cash_sales', 'wa_cash_sales.wa_customer_id', '=', 'wa_customers.id')
-                ->where('wa_cash_sales.creater_id', $request->user_id)
-                //->groupBy('customer_code')
-                ->where('order_date', '>=', $date)
-                ->orderBy('wa_cash_sales.order_date', 'DESC')
-                ->get();
-            foreach ($mydebtorlist as $key => $val) {
-                $mydebtorlist[$key]->balance = WaCashSalesItem::where('wa_cash_sales_id', $val->cash_sales_id)->sum(DB::raw('unit_price * quantity'));
+            // If shift_id is provided, return details for that specific shift (for ShiftDetailsScreen)
+            if ($request->shift_id) {
+                // Query from salesman_shifts table by id
+                $shift = SalesmanShift::find($request->shift_id);
+                    
+                if (!$shift) {
+                    return response()->json(['status' => false, 'message' => 'Shift not found']);
+                }
+                
+                // Return shift details
+                return response()->json([
+                    'status' => true, 
+                    'message' => 'Shift Details', 
+                    'data' => $shift
+                ]);
             }
-
-            return response()->json(['status' => true, 'message' => 'My Shift Sales List.', 'data' => $mydebtorlist]);
+            
+            // Otherwise, return shift history (for ShiftHistoryScreen)
+            $startDate = $request->start_date ? \Carbon\Carbon::parse($request->start_date) : \Carbon\Carbon::today()->subDays(30);
+            $endDate = $request->end_date ? \Carbon\Carbon::parse($request->end_date) : \Carbon\Carbon::today();
+            
+            \Log::info('Fetching shift history', [
+                'user_id' => $request->user_id,
+                'start_date' => $startDate->format('Y-m-d'),
+                'end_date' => $endDate->format('Y-m-d')
+            ]);
+            
+            // Query closed shifts using SalesmanShift model with relationships
+            $shifts = SalesmanShift::with(['salesman_route', 'orders', 'deliverySchedules'])
+                ->where('salesman_id', $request->user_id)
+                ->where('status', 'close')
+                ->whereBetween(DB::raw('DATE(created_at)'), [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->orderBy('created_at', 'DESC')
+                ->get();
+            
+            \Log::info('Shifts found', ['count' => $shifts->count()]);
+            
+            // Enrich with sales, collections, and returns data
+            $enrichedShifts = $shifts->map(function($shift) {
+                $totalOrders = $shift->orders->count();
+                $totalSales = $shift->shift_total ?? 0;
+                
+                // Get collections and returns from delivery schedules
+                $totalCollections = 0;
+                $totalReturns = 0;
+                
+                foreach ($shift->deliverySchedules as $deliverySchedule) {
+                    // Get collections from delivery_schedule_customers
+                    $collections = DB::table('delivery_schedule_customers')
+                        ->where('delivery_schedule_id', $deliverySchedule->id)
+                        ->sum('collection_amount');
+                    $totalCollections += $collections ?? 0;
+                    
+                    // Get returns from delivery_schedule_returns or similar table
+                    // For now, we'll leave returns as 0 until we find the correct table
+                }
+                
+                return [
+                    'id' => $shift->id,
+                    'route_name' => $shift->route,
+                    'route' => $shift->route,
+                    'start_time' => $shift->start_time,
+                    'closed_time' => $shift->closed_time,
+                    'created_at' => $shift->created_at,
+                    'updated_at' => $shift->updated_at,
+                    'status' => $shift->status,
+                    'shift_type' => $shift->shift_type,
+                    'total_orders' => $totalOrders,
+                    'total_orders_amount' => 'KES ' . number_format($totalSales, 2),
+                    'total_collections' => 'KES ' . number_format($totalCollections, 2),
+                    'total_returns' => 'KES ' . number_format($totalReturns, 2),
+                    'shops_count' => $shift->shiftCustomers->where('visited', 1)->count(),
+                ];
+            });
+            
+            return response()->json(['status' => true, 'message' => 'My Shift Sales List.', 'data' => $enrichedShifts]);
         }
     }
 

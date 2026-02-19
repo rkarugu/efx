@@ -73,7 +73,7 @@
                                     <th>Stock Id Code</th>
                                     <th>Title</th>
                                     <th>Bin</th>
-                                    <th>Bizwiz</th>
+                                    <th>EFX</th>
                                     <th>Physical</th>
                                     <th>Excess</th>
                                     <th>Excess value</th>

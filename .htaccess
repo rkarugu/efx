@@ -1,5 +1,8 @@
 RewriteEngine On
 
+# Force HTTPS (uncomment for production)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 #----------------------------------------------
 # | this code use for remove public directory |

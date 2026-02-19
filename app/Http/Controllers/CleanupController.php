@@ -129,6 +129,7 @@ class CleanupController extends Controller
         $debtorTran->salesman_id = $internalRequisition->to_store_id;
         $debtorTran->customer_number = WaCustomer::find($internalRequisition->customer_id)->customer_code;
         $debtorTran->trans_date = $internalRequisition->requisition_date;
+        $debtorTran->input_date = now()->format('Y-m-d H:i:s');
         $debtorTran->wa_accounting_period_id = $accountingPeriod ? $accountingPeriod->id : null;
         $debtorTran->amount = $internalRequisition->getOrderTotalWithoutDiscount();
         $debtorTran->document_no = $internalRequisition->requisition_no;
@@ -146,6 +147,7 @@ class CleanupController extends Controller
             $discountTran->salesman_id = $internalRequisition->to_store_id;
             $discountTran->customer_number = WaCustomer::find($internalRequisition->customer_id)->customer_code;
             $discountTran->trans_date = $internalRequisition->requisition_date;
+            $discountTran->input_date = now()->format('Y-m-d H:i:s');
             $discountTran->wa_accounting_period_id = $accountingPeriod ? $accountingPeriod->id : null;
             $discountTran->amount = ($internalRequisition->getTotalDiscount()) * -1;
             $discountTran->document_no = $internalRequisition->requisition_no;

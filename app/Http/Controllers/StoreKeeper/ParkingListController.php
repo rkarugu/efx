@@ -230,7 +230,7 @@ class ParkingListController extends Controller
 
             $nonDispatchedSheets = SalesmanShiftStoreDispatch::latest()->where('shift_id', $payload['shift_id'])->where('dispatched', false)->get();
             if (count($nonDispatchedSheets) == 0) {
-                $schedule = DeliverySchedule::latest()->where('shift_id', $payload['shift_id'])->first();
+                $schedule = DeliverySchedule::latest()->forShiftId((int)$payload['shift_id'])->first();
                 $schedule?->update(['status' => 'consolidated']);
             }
 

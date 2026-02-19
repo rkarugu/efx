@@ -268,6 +268,8 @@
                                         $model == 'confirm-invoice' ||
                                         $model == 'confirm-invoice-test' ||
                                         $model == 'salesman-shift' ||
+                                        $model == 'salesman-orders' ||
+                                        $model == 'salesman-customers' ||
 
                                         $model == 'processed-returns' ||
                                         $model == 'approver-1' ||
@@ -313,6 +315,34 @@
                                         <li class="@if (isset($model) && $model == 'return-transfers') active @endif">
                                             <a href="{!! route('transfers.return_list') . getReportDefaultFilterForTrialBalance() !!}">
                                                 <i class="fa fa-circle"></i> Sales Invoice Returns
+                                            </a>
+                                        </li>
+                                    @endif
+
+                                    {{-- Salesman Web Order Taking --}}
+                                    @php
+                                        $isSalesman = false;
+                                        if ($logged_user_info) {
+                                            $salesRoleIds = config('salesman.sales_role_ids', [169, 170]);
+                                            $salesKeywords = config('salesman.sales_role_keywords', ['sales', 'salesman', 'representative']);
+                                            $roleName = $logged_user_info->userRole->name ?? $logged_user_info->userRole->title ?? '';
+                                            
+                                            $isSalesman = !empty($logged_user_info->route) || 
+                                                         in_array((int) $logged_user_info->role_id, $salesRoleIds) ||
+                                                         collect($salesKeywords)->some(fn($keyword) => stripos($roleName, $keyword) !== false);
+                                        }
+                                    @endphp
+
+                                    @if ($isSalesman || $logged_user_info->role_id == 1)
+                                        <li class="@if (isset($model) && $model == 'salesman-orders') active @endif">
+                                            <a href="{!! route('salesman-orders.index') !!}">
+                                                <i class="fa fa-shopping-cart"></i> Order Taking
+                                            </a>
+                                        </li>
+                                        
+                                        <li class="@if (isset($model) && $model == 'salesman-customers') active @endif">
+                                            <a href="{!! route('salesman-customers.index') !!}">
+                                                <i class="fa fa-users"></i> Customer Management
                                             </a>
                                         </li>
                                     @endif

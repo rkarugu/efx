@@ -128,7 +128,7 @@
                         VAT NO:
                     </th> -->
                     <th colspan="1" style="width: 33%;text-align:left">
-                        PIN NO: P051604625B
+                        
                     </th>
                     <th colspan="1"  style="width: 33%;text-align:center">CASH SALE NO: {{$data->sales_no}}</th>
                     <th colspan="1" style="width: 33%;text-align:right">DATE: {{date('d-M-Y',strtotime($data->date))}}</th>
@@ -141,7 +141,7 @@
                     <th  colspan="3" style="width: 100%;text-align:left"> <b>Customer PIN:</b> {{$data->customer_pin}}</th>
                 </tr>
                 <tr class="top">
-                    <th  colspan="3" style="width: 100%;text-align:left"> <b>Customer Phone No:</b> {{$data->customer_phone_number}}</th>
+                    <th  colspan="3" style="width: 100%;text-align:left"> <b>Telephone No:</b> {{$data->customer_phone_number}}</th>
                 </tr>
                 @if ($data->print_count > 1)
                     <tr class="top">
@@ -162,8 +162,7 @@
         <table>
             <tbody>
                 <tr class="heading">
-					<td style="width: 8%;">Code</td>
-					<td style="width: 32%;">Description</td>
+					<td style="width: 40%;">Description</td>
 					<td style="width: 7%;">Qty</td>
 					<td style="width: 8%;">RTN-Qty</td>
 					<td style="width: 9%;">Price</td>
@@ -177,15 +176,14 @@
                 @endphp
                 @foreach ($data->items as $item)
                     <tr class="item">
-                        <td>{{@$item->item->stock_id_code}}</td>
                         <td>{{@$item->item->description}}</td>
                         <td>{{((int)$item->qty)}}</td>
                         <td>{{((int)$item->return_quantity)}}</td>
-                        <td>{{manageAmountFormat($item->selling_price)}}</td>
-                        <td>{{manageAmountFormat($item->qty*$item->selling_price)}}</td>
-                        <td>{{manageAmountFormat($item->discount_amount)}}</td>
-                        <td>{{$item->vat_percentage}}</td>
-                        <td>{{manageAmountFormat($item->qty*$item->selling_price)}}</td>
+                        <td>{{number_format($item->selling_price, 0)}}</td>
+                        <td>{{number_format($item->qty*$item->selling_price, 0)}}</td>
+                        <td>{{number_format($item->discount_amount, 0)}}</td>
+                        <td>{{number_format($item->vat_percentage, 0)}}</td>
+                        <td>{{number_format($item->qty*$item->selling_price, 0)}}</td>
                     </tr>
 
                     @php

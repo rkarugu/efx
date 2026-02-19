@@ -70,7 +70,7 @@ class ItemPromotionsController extends Controller
         $promotionTypes = PromotionType::all();
         $promotionGroups = PromotionGroup::where('active', true)->latest()->get();
         $inventoryItem = WaInventoryItem::with('suppliers')->find($itemId);
-        if (isset($permission[$this->pmodule . '___manage-discount']) || $permission == 'superadmin') {
+        if (isset($permission[$this->pmodule . '___manage-promotions']) || $permission == 'superadmin') {
             return view('admin.promotions.create', compact('title', 'model', 'breadcum', 'inventoryItem', 'inventoryItems','promotionGroups','promotionTypes'));
         } else {
             Session::flash('warning', 'Invalid Request');
@@ -92,15 +92,36 @@ class ItemPromotionsController extends Controller
         $basePath = $this->basePath;
         $breadcum = [$title => route('item-centre.show', $itemId), 'Create' => ''];
 
+        // Enhanced validation for foreign key constraints
+        $request->validate([
+            'from_date' => 'required|date',
+            'to_date' => 'nullable|date|after_or_equal:from_date',
+            'promotion_type_id' => 'required|exists:promotion_types,id',
+            'supplier_id' => 'required|exists:wa_suppliers,id',
+            'promotion_group_id' => 'nullable|exists:promotion_groups,id',
+            'inventory_item' => 'nullable|exists:wa_inventory_items,id'
+        ]);
+
         try{
         $inventoryItem = WaInventoryItem::with('supplier_data')->find($itemId);
+        
+        // Validate that the inventory item exists
+        if (!$inventoryItem) {
+            return redirect()->back()->withErrors(['errors' => 'Inventory item not found']);
+        }
+        
+        // Validate user exists
+        $user = getLoggeduserProfile();
+        if (!$user || !$user->id) {
+            return redirect()->back()->withErrors(['errors' => 'User profile not found']);
+        }
 
 
         /*create a demand*/
             $demandCode = getCodeWithNumberSeries('DELTA');
             $delta = new WaDemand();
             $delta->demand_no = $demandCode;
-            $delta->created_by = $request->user_id;
+            $delta->created_by = $user->id; // Use validated user ID
             $delta->wa_supplier_id = $request->supplier_id;
             $delta->demand_amount = 0;
             $delta->edited_demand_amount = 0;
@@ -115,22 +136,30 @@ class ItemPromotionsController extends Controller
             $itemPromotion->wa_demand_id = $delta->id;
             $itemPromotion->supplier_id = $request->supplier_id;
             $itemPromotion->apply_to_split = $request->apply_to_split ?? false;
-            $itemPromotion->initiated_by = getLoggeduserProfile()->id;
+            $itemPromotion->initiated_by = $user->id; // Use validated user ID
             $itemPromotion->from_date = \Carbon\Carbon::parse($request->from_date)->toDateString();
             if($request->to_date){
                 $itemPromotion->to_date = \Carbon\Carbon::parse($request->to_date)->toDateString();
             }
+            
             $type = PromotionType::find($request->promotion_type_id);
+            if (!$type) {
+                return redirect()->back()->withErrors(['errors' => 'Invalid promotion type']);
+            }
+            
             if ($type->description == PromotionMatrix::BSGY->value)
             {
-
+                // Validate promotion item exists for BSGY type
+                if ($request->inventory_item && !WaInventoryItem::find($request->inventory_item)) {
+                    return redirect()->back()->withErrors(['errors' => 'Promotion item not found']);
+                }
+                
                 $itemPromotion->sale_quantity = $request->item_quantity;
                 $itemPromotion->promotion_item_id = $request->inventory_item;
                 $itemPromotion->promotion_quantity = $request->promotion_quantity;
             }
             if ($type->description == PromotionMatrix::PD->value)
             {
-
                 $itemPromotion->current_price = $inventoryItem->selling_price;
                 $itemPromotion->promotion_price = $request->promotion_price;
             }
@@ -280,7 +309,7 @@ class ItemPromotionsController extends Controller
             $promotion->save();
             
         
-        return redirect()->route("item-centre.show", $itemId)->with('success', 'Promotion blocked successfully' );
+        return redirect()->route("item-centre.show", $itemId)->with('success', 'Promotion unblocked successfully' );
 
 
         }catch(\Throwable $e){
@@ -325,10 +354,12 @@ class ItemPromotionsController extends Controller
         LEFT JOIN
             users ON item_promotions.initiated_by = users.id        
         ";
+        $bindings = [];
         if($request->item){
-            $query.= " WHERE item_promotions.inventory_item_id = $request->item ";
+            $query.= " WHERE item_promotions.inventory_item_id = ? ";
+            $bindings[] = $request->item;
         }
-        $data  = DB::select($query);
+        $data  = DB::select($query, $bindings);
 
         if($request->type && $request->type == 'Download'){
             $export = new ItemsWithPromotionsExport(collect($data));

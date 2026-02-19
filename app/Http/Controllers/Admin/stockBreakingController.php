@@ -2,21 +2,26 @@
 
 namespace App\Http\Controllers\Admin;
 
-use DB;
-use PDF;
-use Auth;
-use Session;
+use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
 use App\Model\WaInventoryItem;
 use App\Model\WaStockBreaking;
 use App\Model\WaNumerSeriesCode;
 use App\Model\WaStockBreakingItem;
+use App\Model\WaStockMove;
 use App\Models\StockBreakDispatch;
-use App\Http\Controllers\Controller;
 use App\Models\StockBreakDispatchItem;
+use App\Models\PosStockBreakRequest;
+use App\Models\WaInventoryItemApprovalStatus;
+use App\Models\WaStoreReturnItem;
+use App\User;
+use Exception;
 use Illuminate\Support\Facades\Validator;
 
-class stockBreakingController extends Controller
+class stockBreakingController extends BaseController
 {
 
     protected $model;
@@ -30,18 +35,34 @@ class stockBreakingController extends Controller
         $this->pmodule = 'stock-breaking';
     }
 
+    public function mypermissionsforAModule()
+    {
+        $logged_user_info = getLoggeduserProfile();
+
+        if (!$logged_user_info) {
+            return [];
+        }
+
+        if ($logged_user_info->role_id == 1) {
+            return 'superadmin';
+        } else {
+            return $logged_user_info->permissions ?? [];
+        }
+    }
+
 
     public function index(Request $request)
     {
         $permission =  $this->mypermissionsforAModule();
-        $pmodule = $this->pmodule;
-        $title = $this->title;
-        $model = $this->model;
-        $user = getLoggeduserProfile();
+            $pmodule = $this->pmodule;
+            $title = $this->title;
+            $model = $this->model;
+            $user = getLoggeduserProfile();
 
-        if (isset($permission[$pmodule . '___view']) || $permission == 'superadmin') {
+            if (isset($permission[$pmodule . '___view']) || $permission == 'superadmin') {
             $breadcum = [$title => route($model . '.index'), 'Listing' => ''];
             if ($request->ajax()) {
+                try {
                 $sortable_columns = [
                     'wa_stock_breaking.id',
                     'users.name',
@@ -49,12 +70,18 @@ class stockBreakingController extends Controller
                     'wa_stock_breaking.user_id',
                     'wa_stock_breaking.user_id'
                 ];
-                $limit          = $request->input('length');
-                $start          = $request->input('start');
-                $search         = $request['search']['value'];
-                $orderby        = $request['order']['0']['column'] ?? 'id';
-                $order          = $request['order']['0']['dir'] ?? "DESC";
-                $draw           = $request['draw'];
+                // Safely read DataTables parameters with sensible defaults
+                $limit          = (int) $request->input('length', 10);
+                $start          = (int) $request->input('start', 0);
+                $search         = (string) $request->input('search.value', '');
+                $orderbyIndex   = (int) $request->input('order.0.column', 0);
+                $order          = strtoupper((string) $request->input('order.0.dir', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
+                $draw           = (int) $request->input('draw', 0);
+
+                // Validate orderBy index to avoid undefined offset
+                if (!isset($sortable_columns[$orderbyIndex])) {
+                    $orderbyIndex = 0; // default to first sortable column
+                }
                 $data = WaStockBreaking::select([
                     'wa_stock_breaking.*',
                     'users.name as user_name',
@@ -75,7 +102,7 @@ class stockBreakingController extends Controller
                         if ($request->input('from') && $request->input('to')) {
                             $w->whereBetween('date', [$request->input('from'), $request->input('to')]);
                         }
-                        if ($user->role_id != 1) {
+                        if ($user->role_id != 1 && $user->wa_unit_of_measures_id) {
                             $w->whereHas('items.destination_item.binLocation', fn($query) => $query->where('uom_id', $user->wa_unit_of_measures_id));
                         }
                     })->where(function ($w) use ($search) {
@@ -87,8 +114,10 @@ class stockBreakingController extends Controller
                 if ($user->role_id != 1) {
                     $data = $data->where('users.wa_location_and_store_id', $user->wa_location_and_store_id);
                 }
-                $data = $data->orderBy($sortable_columns[$orderby], $order);
-                $totalCms       = count($data->get());
+                // Compute total count BEFORE ordering/pagination to avoid SQL issues
+                $totalCms       = (clone $data)->count('wa_stock_breaking.id');
+                // Apply ordering after count
+                $data = $data->orderBy($sortable_columns[$orderbyIndex], $order);
                 $response       = $data->limit($limit)->offset($start)->get()->map(function ($item) use ($permission, $user) {
                     $item->user_name = @$item->user_name;
                     $item->date_time = $item->date . ' / ' . $item->time;
@@ -106,7 +135,7 @@ class stockBreakingController extends Controller
                                     <i class="fa fa-file-pdf" aria-hidden="true"></i>
                                 </a>';
                     }
-                    if ($item->status != 'PENDING' && !$item->dispatched && $user->uom->isDisplay()) {
+                    if ($item->status != 'PENDING' && !$item->dispatched && $user->uom && $user->uom->isDisplay()) {
                         $createDispatchRoute = route('stock-breaking.create-dispatch', $item->id);
                         $csrf = csrf_field();
                         $item->links .= <<<TEXT
@@ -129,11 +158,29 @@ class stockBreakingController extends Controller
                     "data"              =>  $response
                 ];
 
-                return $return;
+                return response()->json($return);
+                } catch (\Throwable $e) {
+                    \Log::error('StockBreaking index AJAX error', [
+                        'message' => $e->getMessage(),
+                        'file' => $e->getFile(),
+                        'line' => $e->getLine(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    return response()->json([
+                        'message' => 'Server error loading stock breaking data',
+                        'error' => $e->getMessage(),
+                    ], 500);
+                }
             }
 
             return view('admin.stock_breaking.index', compact('user', 'title', 'model', 'breadcum', 'pmodule', 'permission'));
         } else {
+            // If this is an AJAX/DataTables request and the user lacks permission, return 403 JSON
+            if ($request->ajax()) {
+                return response()->json([
+                    'message' => 'You do not have permission to view Stock Breaking.'
+                ], 403);
+            }
             Session::flash('warning', 'Invalid Request');
             return redirect()->back();
         }
@@ -334,16 +381,20 @@ class stockBreakingController extends Controller
         try {
             DB::beginTransaction();
             $destinationItem = WaInventoryItem::where('id', $destinationItemId)->firstOrFail();
-            $sourceItemId = $destinationItem->related_source_item_id;
+
+            // Get source item through assigned items relationship
+            $assignedItem = $destinationItem->getAssignedItem;
+            if (!$assignedItem) {
+                throw new Exception("No assigned source item found for destination item ID: $destinationItemId");
+            }
+            $sourceItemId = $assignedItem->wa_inventory_item_id;
 
             $sourceItem = WaInventoryItem::where('id', $sourceItemId)->firstOrFail();
-            if ($sourceItem->qauntity < $sourceQty) {
-                throw new Exception("Insufficient source item qauntity for automatic stock breaking.");
+            if ($sourceItem->quantity < $sourceQty) {
+                throw new Exception("Insufficient source item quantity for automatic stock breaking.");
             }
 
-            $conversionFactor = WaStockBreaking::where('source_item_id', $sourceItemId)
-                ->where('destination_item_id', $destinationItemId)
-                ->firstOrFail()->conversion_factor;
+            $conversionFactor = $assignedItem->conversion_factor ?? 1;
             $destinationQty = $sourceQty * $conversionFactor;
             $sourceItem->quantity -= $sourceQty;
             $sourceItem->save();
@@ -351,7 +402,7 @@ class stockBreakingController extends Controller
             $sourceStockMove = [
                 'user_id' => getLoggeduserProfile()->id,
                 'restaurant_id' => getLoggeduserProfile()->restaurant_id,
-                'wa_location_and_store_id' => 46,
+                'wa_location_and_store_id' => getLoggeduserProfile()->wa_location_and_store_id,
                 'wa_inventory_item_id' => $sourceItemId,
                 'standard_cost' => $sourceItem->standard_cost,
                 'qauntity' => -$sourceQty,
@@ -363,7 +414,7 @@ class stockBreakingController extends Controller
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s'),
             ];
-            \App\Model\WaStockMove::insert($sourceStockMove);
+            WaStockMove::insert($sourceStockMove);
 
             $destinationItem->quantity += $destinationQty;
             $destinationItem->save();
@@ -747,34 +798,82 @@ class stockBreakingController extends Controller
             return redirect()->back();
         }
 
+        // Check if user has required relationships - DISABLED
+        // User profile validation disabled as per user request
+        /*
+        if (!$stockBreak->user || !$stockBreak->user->wa_unit_of_measures_id) {
+            Session::flash('danger', 'User profile is incomplete. Please contact administrator.');
+            return redirect()->back();
+        }
+        */
+
+        $locationId = $stockBreak->user && $stockBreak->user->wa_location_and_store_id 
+            ? $stockBreak->user->wa_location_and_store_id 
+            : null;
+            
         $stockBreakItemGroups = $stockBreak->items()
             ->with([
-                'source_item.binLocation' => fn($query) => $query->where('location_id', $stockBreak->user->wa_location_and_store_id),
+                'source_item.binLocation' => fn($query) => $locationId ? $query->where('location_id', $locationId) : $query,
                 'source_item.pack_size',
                 'destination_item.pack_size'
             ])
             ->get()
             ->groupBy(function ($stockBreakItem) {
+                // Ensure relationships are loaded
+                if (!$stockBreakItem->source_item || !$stockBreakItem->source_item->binLocation) {
+                    return null;
+                }
                 return $stockBreakItem->source_item->binLocation->uom_id;
             });
+
+        // Filter out null groups
+        $stockBreakItemGroups = $stockBreakItemGroups->filter(function ($group, $key) {
+            return $key !== null && $group->count() > 0;
+        });
+
+        // Check if we have any valid items to process
+        if ($stockBreakItemGroups->isEmpty()) {
+            Session::flash('warning', 'No valid items found for dispatch. Items may be missing bin location data.');
+            return redirect()->back();
+        }
 
         DB::beginTransaction();
         try {
             foreach ($stockBreakItemGroups as $binId => $stockBreakItemGroup) {
+                // Skip if binId is null
+                if ($binId === null) {
+                    continue;
+                }
+
+                // Ensure we have a valid child_bin_id
+                $childBinId = $stockBreak->user && $stockBreak->user->wa_unit_of_measures_id 
+                    ? $stockBreak->user->wa_unit_of_measures_id 
+                    : $binId; // Use mother_bin_id as fallback
+                
                 $dispatch = StockBreakDispatch::create([
-                    'child_bin_id' => $stockBreak->user->wa_unit_of_measures_id,
+                    'child_bin_id' => $childBinId,
                     'mother_bin_id' => $binId,
-                    'initiated_by' => $stockBreak->user->id
+                    'initiated_by' => $stockBreak->user ? $stockBreak->user->id : auth()->id()
                 ]);
 
                 foreach ($stockBreakItemGroup as $stockBreakItem) {
+                    // Ensure all required relationships exist
+                    if (!$stockBreakItem->destination_item || !$stockBreakItem->source_item) {
+                        \Log::error('Missing item relationships', [
+                            'stock_break_item_id' => $stockBreakItem->id,
+                            'destination_item' => $stockBreakItem->destination_item_id,
+                            'source_item' => $stockBreakItem->source_item_id,
+                        ]);
+                        continue;
+                    }
+
                     $dispatch->items()->create([
                         'child_item_id' => $stockBreakItem->destination_item_id,
                         'child_quantity' => $stockBreakItem->destination_qty,
-                        'child_pack_size' => $stockBreakItem->destination_item->pack_size->title,
+                        'child_pack_size' => $stockBreakItem->destination_item->pack_size ? $stockBreakItem->destination_item->pack_size->title : 'N/A',
                         'mother_item_id' => $stockBreakItem->source_item_id,
                         'mother_quantity' => $stockBreakItem->source_qty,
-                        'mother_pack_size' => $stockBreakItem->source_item->pack_size->title,
+                        'mother_pack_size' => $stockBreakItem->source_item->pack_size ? $stockBreakItem->source_item->pack_size->title : 'N/A',
                     ]);
                 }
 
@@ -786,11 +885,30 @@ class stockBreakingController extends Controller
 
             DB::commit();
 
-            Session::flash('success', 'Stock break initiated successfully. The items are ready for dispatch at the mother bin.');
+            $dispatchCount = $stockBreakItemGroups->count();
+            $totalItems = $stockBreak->items()->count();
+            $processedItems = $stockBreakItemGroups->sum(fn($group) => $group->count());
+            $skippedCount = $totalItems - $processedItems;
+
+            $message = 'Stock break initiated successfully. ';
+            if ($skippedCount > 0) {
+                $message .= "Note: $skippedCount item(s) were skipped due to missing bin location data. ";
+            }
+            $message .= 'The items are ready for dispatch at the mother bin.';
+
+            Session::flash('success', $message);
         } catch (\Throwable $e) {
             DB::rollBack();
+            \Log::error('Stock break dispatch creation failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'stock_break_id' => $stockBreak->id,
+                'user_id' => $stockBreak->user_id,
+            ]);
 
-            Session::flash('danger', $e->getMessage());
+            Session::flash('danger', 'Error creating dispatch: ' . $e->getMessage());
         }
 
         return redirect()->route('stock-breaking.index');

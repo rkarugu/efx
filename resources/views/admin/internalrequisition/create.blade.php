@@ -538,6 +538,9 @@ display:none;
             var qty = $(this).val();
             var inputName = $(this).attr('name');
             var item_id = inputName.substring(inputName.indexOf("[") + 1, inputName.indexOf("]"));
+            
+            console.log('Quantity changed for item:', item_id, 'quantity:', qty);
+            console.log('Input name:', inputName);
             var counts = $(this).data('counts');
             var $inputElement = $(this);
             $inputElement.next('.error-message').remove();
@@ -558,23 +561,8 @@ display:none;
                 }
             }
 
-            // AJAX call to calculate the discount
-            $.ajax({
-                type: "GET",
-                url: "{{route('pos-cash-sales.cal_discount')}}",
-                data: {
-                    'item_id': item_id,
-                    'item_quantity': qty
-                },
-                success: function (response) {
-                    var discountName = 'item_discount[' + response.item_id + ']';
-                    var discId = $('input[name="' + discountName + '"]');
-                    // Update the discount field and trigger keyup for any further updates
-                    $(discId).val(response.discount).attr('value', response.discount).trigger('keyup');
-                    vat_list();
-                    totalofAllTotal();
-                }
-            });
+            // Note: Discount bands are now calculated in the backend during form submission
+            // This ensures consistent discount application without frontend AJAX issues
             totalofAllTotal();
         });
         $(document).on('click', '.deleteparent', function () {
@@ -719,6 +707,8 @@ display:none;
                         $this.parents('tr').replaceWith(response);
                         vat_list();
                         totalofAllTotal();
+                        
+                        // Discount bands will be calculated automatically in the backend when the form is submitted
                     }
                 });
             }

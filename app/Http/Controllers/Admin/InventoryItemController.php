@@ -345,7 +345,7 @@ class InventoryItemController extends Controller
                 DB::raw(' (select sum(qauntity) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id = wa_inventory_items.id and wa_stock_moves.wa_location_and_store_id = ' . $location_and_store_id . ') as item_total_qunatity'),
                 DB::RAW(' (select count(wa_stock_moves.id) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id=wa_inventory_items.id and wa_stock_moves.wa_location_and_store_id = ' . $location_and_store_id . ') as item_count'),
                 DB::RAW(' (SELECT SUM(items.quantity) FROM wa_purchase_order_items AS items JOIN  wa_purchase_orders AS orders ON orders.id = items.wa_purchase_order_id LEFT JOIN wa_grns AS grns ON grns.wa_purchase_order_id = items.wa_purchase_order_id WHERE items.wa_inventory_item_id = wa_inventory_items.id AND orders.status = \'APPROVED\' AND orders.is_hide <> \'Yes\' AND grns.grn_number IS NULL and orders.wa_location_and_store_id = ' . $location_and_store_id . ') as qty_on_order')
-            )->withCount('inventory_item_suppliers')->with('pack_size')
+            )->withCount('inventory_item_suppliers')->with('pack_size', 'approvalStatus.approvalBy')
                 ->join('wa_inventory_categories', 'wa_inventory_categories.id', '=', 'wa_inventory_items.wa_inventory_category_id')
                 ->leftjoin('wa_inventory_location_uom', 'wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')->where('item_type', '1')
                 ->where('wa_inventory_location_uom.uom_id', $user->wa_unit_of_measures_id);
@@ -360,7 +360,7 @@ class InventoryItemController extends Controller
                     DB::RAW(' (SELECT SUM(items.quantity) FROM wa_purchase_order_items AS items JOIN  wa_purchase_orders AS orders ON orders.id = items.wa_purchase_order_id LEFT JOIN wa_grns AS grns ON grns.wa_purchase_order_id = items.wa_purchase_order_id WHERE items.wa_inventory_item_id = wa_inventory_items.id AND orders.status = \'APPROVED\' AND orders.is_hide <> \'Yes\' AND grns.grn_number IS NULL) as qty_on_order')
                 )
                 ->withCount('inventory_item_suppliers')
-                ->with('pack_size')
+                ->with('pack_size', 'approvalStatus.approvalBy')
                 ->join('wa_inventory_categories', 'wa_inventory_categories.id', '=', 'wa_inventory_items.wa_inventory_category_id')
                 ->where('item_type', '1');
         }
@@ -525,7 +525,7 @@ class InventoryItemController extends Controller
                 DB::raw(' (select sum(qauntity) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id = wa_inventory_items.id and wa_stock_moves.wa_location_and_store_id = ' . $location_and_store_id . ') as item_total_qunatity'),
                 DB::RAW(' (select count(wa_stock_moves.id) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id=wa_inventory_items.id and wa_stock_moves.wa_location_and_store_id = ' . $location_and_store_id . ') as item_count'),
                 DB::RAW(' (SELECT SUM(items.quantity) FROM wa_purchase_order_items AS items JOIN  wa_purchase_orders AS orders ON orders.id = items.wa_purchase_order_id LEFT JOIN wa_grns AS grns ON grns.wa_purchase_order_id = items.wa_purchase_order_id WHERE items.wa_inventory_item_id = wa_inventory_items.id AND orders.status = \'APPROVED\' AND orders.is_hide <> \'Yes\' AND grns.grn_number IS NULL and orders.wa_location_and_store_id = ' . $location_and_store_id . ') as qty_on_order')
-            )->withCount('inventory_item_suppliers')->with('pack_size')
+            )->withCount('inventory_item_suppliers')->with('pack_size', 'approvalStatus.approvalBy')
                 ->leftjoin('wa_inventory_categories', 'wa_inventory_categories.id', '=', 'wa_inventory_items.wa_inventory_category_id')
                 ->leftjoin('wa_inventory_location_uom', 'wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')->where('item_type', '1')
                 ->where('wa_inventory_location_uom.uom_id', $user->wa_unit_of_measures_id);
@@ -536,7 +536,7 @@ class InventoryItemController extends Controller
                 DB::RAW(' (select sum(qauntity) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id=wa_inventory_items.id) as item_total_qunatity'),
                 DB::RAW(' (select count(wa_stock_moves.id) from wa_stock_moves where wa_stock_moves.wa_inventory_item_id=wa_inventory_items.id) as item_count'),
                 DB::RAW(' (SELECT SUM(items.quantity) FROM wa_purchase_order_items AS items JOIN  wa_purchase_orders AS orders ON orders.id = items.wa_purchase_order_id LEFT JOIN wa_grns AS grns ON grns.wa_purchase_order_id = items.wa_purchase_order_id WHERE items.wa_inventory_item_id = wa_inventory_items.id AND orders.status = \'APPROVED\' AND orders.is_hide <> \'Yes\' AND grns.grn_number IS NULL) as qty_on_order')
-            )->withCount('inventory_item_suppliers')->with('pack_size')
+            )->withCount('inventory_item_suppliers')->with('pack_size', 'approvalStatus.approvalBy')
                 ->leftjoin('wa_inventory_categories', 'wa_inventory_categories.id', '=', 'wa_inventory_items.wa_inventory_category_id')->where('item_type', '1');
         }
 
@@ -574,8 +574,8 @@ class InventoryItemController extends Controller
                 if ($request->item || $request->user) {
                     if ($request->item == $row->id) {
                         $user_link = '';
-                        $nestedData['requested_by'] = $row->approvalStatus[0]->approvalBy?->name;
-                        $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus[0]->created_at));
+                        $nestedData['requested_by'] = $row->approvalStatus->first()?->approvalBy?->name;
+                        $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus->first()?->created_at));
                         $nestedData['stock_id_code'] = $row->stock_id_code;
                         $nestedData['item_category'] = $row->category_description;
                         $nestedData['title'] = $row->title;
@@ -588,10 +588,10 @@ class InventoryItemController extends Controller
 
                         $data[] = $nestedData;
                     }
-                    if ($request->user == $row->approvalStatus[0]->approvalBy?->id) {
+                    if ($request->user == $row->approvalStatus->first()?->approvalBy?->id) {
                         $user_link = '';
-                        $nestedData['requested_by'] = $row->approvalStatus[0]->approvalBy?->name;
-                        $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus[0]->created_at));
+                        $nestedData['requested_by'] = $row->approvalStatus->first()?->approvalBy?->name;
+                        $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus->first()?->created_at));
                         $nestedData['stock_id_code'] = $row->stock_id_code;
                         $nestedData['item_category'] = $row->category_description;
                         $nestedData['title'] = $row->title;
@@ -606,8 +606,8 @@ class InventoryItemController extends Controller
                     }
                 } else {
                     $user_link = '';
-                    $nestedData['requested_by'] = $row->approvalStatus[0]->approvalBy?->name;
-                    $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus[0]->created_at));
+                    $nestedData['requested_by'] = $row->approvalStatus->first()?->approvalBy?->name;
+                    $nestedData['requested_on'] = date('d M, Y H:m', strtotime($row->approvalStatus->first()?->created_at));
                     $nestedData['stock_id_code'] = $row->stock_id_code;
                     $nestedData['item_category'] = $row->category_description;
                     $nestedData['title'] = $row->title;

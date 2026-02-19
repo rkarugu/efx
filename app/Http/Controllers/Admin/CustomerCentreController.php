@@ -56,7 +56,7 @@ class CustomerCentreController extends Controller
                 DB::raw("(SELECT SUM(prev.amount) FROM wa_debtor_trans as prev where wa_customer_id = $customer->id AND prev.id  < wa_debtor_trans.id) AS opening_balance"),
             ])
             ->selectRaw("(CASE WHEN amount > 0 THEN amount ELSE 0 END) as debit")
-            ->selectRaw("(CASE WHEN amount < 0 THEN amount ELSE 0 END) as credit")
+            ->selectRaw("(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as credit")
             ->leftJoin('wa_internal_requisitions as invoices', 'wa_debtor_trans.wa_sales_invoice_id', 'invoices.id')
             ->where('wa_customer_id', $customer->id)
             ->whereBetween('trans_date', [$from, $to]);
@@ -68,7 +68,9 @@ class CustomerCentreController extends Controller
 
         return DataTables::eloquent($query)
             ->editColumn('trans_date', function ($query) {
-                return $query->created_at;
+                // Use input_date if available (has time), otherwise use trans_date
+                $dateTime = $query->input_date ?? $query->trans_date;
+                return \Carbon\Carbon::parse($dateTime)->format('Y-m-d H:i');
             })
             ->editColumn('reference', function ($query) {
                 $reference = $query->reference;

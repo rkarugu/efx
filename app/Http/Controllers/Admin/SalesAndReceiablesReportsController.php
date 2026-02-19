@@ -1025,7 +1025,41 @@ class SalesAndReceiablesReportsController extends Controller
             $breadcum = [];
             $salesmanname = '';
             if ($request->shift_id != null) {
-                $shiftData = WaShift::whereIn('id', $request->shift_id)->pluck('shift_id')->toArray();
+                // Handle both SalesmanShift IDs and WaShift IDs
+                $salesmanShiftIds = collect($request->shift_id);
+                
+                // Check if financial data exists for SalesmanShift IDs directly
+                $hasFinancialData = DB::table('wa_merged_payments')
+                    ->whereIn('shift_id', $salesmanShiftIds)
+                    ->exists();
+                
+                if ($hasFinancialData) {
+                    // Financial data is linked to SalesmanShift IDs directly
+                    $shiftIds = $salesmanShiftIds->toArray();
+                    $shiftData = SalesmanShift::whereIn('id', $shiftIds)
+                        ->with(['salesman', 'salesman_route'])
+                        ->get()
+                        ->pluck('shift_id')
+                        ->toArray();
+                } else {
+                    // Find corresponding WaShift records for SalesmanShift IDs
+                    $waShiftIds = [];
+                    foreach ($salesmanShiftIds as $shiftId) {
+                        // Check if this is a SalesmanShift ID by looking for corresponding WaShift
+                        $waShift = WaShift::where('shift_id', 'LIKE', 'SS-' . $shiftId . '-%')->first();
+                        if ($waShift) {
+                            $waShiftIds[] = $waShift->id;
+                        } else {
+                            // Assume it's already a WaShift ID
+                            $waShiftIds[] = $shiftId;
+                        }
+                    }
+                    $shiftIds = $waShiftIds;
+                    $shiftData = WaShift::whereIn('id', $waShiftIds)->pluck('shift_id')->toArray();
+                }
+                
+                // Update the request to use the correct shift IDs for all subsequent queries
+                $request->merge(['shift_id' => $shiftIds]);
 
                 $all_item = WaCashSales::with('getRelatedSalesman')->select('*');
                 if ($request->has('salesman_id')) {

@@ -28,6 +28,8 @@ use App\Model\WaInventoryLocationUom;
 use App\Model\WaUnitOfMeasure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use App\DiscountBand;
+use App\ItemPromotion;
 use PDF;
 use Session;
 use Illuminate\Support\Facades\Validator;
@@ -134,6 +136,7 @@ class InternalRequisitionController extends Controller
 
             $lists = WaInternalRequisition::with(['getRouteCustomer', 'getrelatedEmployee', 'esd_details'])
                 ->whereIn('route_id', $routes)
+                ->where('requisition_no', 'LIKE', 'INV-%')
                 ->whereBetween('created_at', [$startDate, $endDate]);
 
             //            $esd_details = WaEsdDetails::where('invoice_number', $request->requisition_no)->first();
@@ -201,7 +204,22 @@ class InternalRequisitionController extends Controller
         $model = $this->model;
         $breadcum = [$this->title => route($model . '.index'), 'Add' => ''];
         $row = WaInternalRequisition::whereSlug($slug)->first();
-        return view('admin.internalrequisition.print', compact('title', 'model', 'breadcum', 'row'));
+        $list = $row;
+        $itemsdata = WaInternalRequisitionItem::query()
+            ->select(
+                'wa_internal_requisition_items.*',
+                'wa_unit_of_measures.title as bin'
+            )
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_internal_requisition_items.wa_inventory_item_id')
+            ->join('wa_inventory_location_uom', function ($join) use ($list) {
+                $join->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id')
+                    ->where('wa_inventory_location_uom.location_id', $list->to_store_id);
+            })
+            ->join('wa_unit_of_measures', 'wa_inventory_location_uom.uom_id', '=', 'wa_unit_of_measures.id')
+            ->where('wa_internal_requisition_items.wa_internal_requisition_id', $list->id)
+            ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
+            ->get();
+        return view('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'row', 'list', 'itemsdata'));
     }
 
     public function exportToPdf($slug)
@@ -227,7 +245,7 @@ class InternalRequisitionController extends Controller
             ->orderBy('wa_inventory_items.stock_id_code', 'ASC')
             ->get();
 
-        $pdf = PDF::loadView('admin.internalrequisition.print', compact('title', 'model', 'breadcum', 'list', 'itemsdata'));
+        $pdf = PDF::loadView('admin.salesinvoice.print', compact('title', 'model', 'breadcum', 'list', 'itemsdata'));
         $report_name = 'internal_requisition_' . date('Y_m_d_H_i_A');
         return $pdf->download($report_name . '.pdf');
     }
@@ -350,9 +368,83 @@ class InternalRequisitionController extends Controller
 
                 $childs = [];
                 foreach ($inventory as $key => $value) {
+                    $quantity = @$request->item_quantity[$value->id];
+                    $originalPrice = @$request->item_selling_price[$value->id];
+                    
+                    // Check for discount bands
+                    $discountBand = DiscountBand::where('inventory_item_id', $value->id)
+                        ->where('status', 'APPROVED')
+                        ->where(function ($query) use ($quantity) {
+                            $query->where('from_quantity', '<=', $quantity)
+                                ->where(function($q) use ($quantity) {
+                                    $q->where('to_quantity', '>=', $quantity)
+                                      ->orWhereNull('to_quantity');
+                                });
+                        })
+                        ->orderBy('from_quantity', 'desc')
+                        ->first();
+                    
+                    $discountAmount = 0;
+                    $finalPrice = $originalPrice;
+                    
+                    if ($discountBand) {
+                        $discountAmount = $discountBand->discount_amount * $quantity;
+                        $finalPrice = max(0, $originalPrice - $discountBand->discount_amount);
+                    }
+                    
+                    // Check for Buy X Get Y promotions
+                    $promotion = ItemPromotion::where('inventory_item_id', $value->id)
+                        ->where('status', 'active')
+                        ->whereNotNull('promotion_item_id')
+                        ->where(function ($query) {
+                            $today = \Carbon\Carbon::today();
+                            $query->where('from_date', '<=', $today)
+                                ->where(function ($subQuery) use ($today) {
+                                    $subQuery->where('to_date', '>=', $today)
+                                             ->orWhereNull('to_date');
+                                });
+                        })
+                        ->first();
+                        
+                    if ($promotion) {
+                        $promotionBatches = floor($quantity / (float)$promotion->sale_quantity);
+                        if ($promotionBatches > 0) {
+                            $promotionQty = $promotionBatches * $promotion->promotion_quantity;
+                            $promotionItem = WaInventoryItem::find($promotion->promotion_item_id);
+                            
+                            if ($promotionItem) {
+                                // Add free item to childs array
+                                $childs[] = [
+                                    'wa_internal_requisition_id' => $row->id,
+                                    'wa_inventory_item_id' => $promotionItem->id,
+                                    'quantity' => $promotionQty,
+                                    'standard_cost' => $promotionItem->standard_cost,
+                                    'selling_price' => 0, // Free item
+                                    'total_cost' => 0, // Free item
+                                    'tax_manager_id' => $promotionItem->tax_manager_id,
+                                    'vat_rate' => 0,
+                                    'vat_amount' => 0,
+                                    'total_cost_with_vat' => 0,
+                                    'created_at' => date('Y-m-d H:i:s'),
+                                    'store_location_id' => $getLoggeduserProfile->store_location_id,
+                                    'updated_at' => date('Y-m-d H:i:s'),
+                                    'hs_code' => $promotionItem->hs_code,
+                                    'discount' => 0,
+                                ];
+                                
+                                \Log::info("Credit Invoice: Free item added", [
+                                    'promotion_item_id' => $promotionItem->id,
+                                    'promotion_qty' => $promotionQty,
+                                    'customer_bought' => $quantity,
+                                    'promotion_batches' => $promotionBatches
+                                ]);
+                            }
+                        }
+                    }
+                    
                     $vat_rate = 0;
                     $vat_amount = 0;
-                    $totalcost = @$request->item_selling_price[$value->id] * (@$request->item_quantity[$value->id]);
+                    $totalcost = $finalPrice * $quantity;
                     if ($value->tax_manager_id && $value->getTaxesOfItem) {
                         $vat_rate = $value->getTaxesOfItem->tax_value;
                         $vat_amount = $totalcost - (($totalcost * 100) / ($vat_rate + 100));
@@ -360,19 +452,19 @@ class InternalRequisitionController extends Controller
                     $childs[] = [
                         'wa_internal_requisition_id' => $row->id,
                         'wa_inventory_item_id' => $value->id,
-                        'quantity' => @$request->item_quantity[$value->id],
+                        'quantity' => $quantity,
                         'standard_cost' => $value->standard_cost,
-                        'selling_price' => @$request->item_selling_price[$value->id],
+                        'selling_price' => $originalPrice, // Store original price
                         'total_cost' => $totalcost,
                         'tax_manager_id' => $value->tax_manager_id,
                         'vat_rate' => $vat_rate,
                         'vat_amount' => $vat_amount,
-                        'total_cost_with_vat' => ($totalcost - (isset($request->item_discount[$value->id]) ? $request->item_discount[$value->id] : 0)),
+                        'total_cost_with_vat' => $totalcost,
                         'created_at' => date('Y-m-d H:i:s'),
                         'store_location_id' => $getLoggeduserProfile->store_location_id,
                         'updated_at' => date('Y-m-d H:i:s'),
                         'hs_code' => $value->hs_code,
-                        'discount' => isset($request->item_discount[$value->id]) ? $request->item_discount[$value->id] : 0,
+                        'discount' => $discountAmount, // Per unit discount
                     ];
                 }
                 WaInternalRequisitionItem::insert($childs);
@@ -466,7 +558,7 @@ class InternalRequisitionController extends Controller
             $model = $this->model;
             foreach ($row->getRelatedItem as $relatedItem) {
                 $ItemBin = WaInventoryLocationUom::where('inventory_id', $relatedItem->wa_inventory_item_id)->where('location_id', $row->to_store_id)->get();
-                if ($ItemBin[0]->uom_id) {
+                if ($ItemBin->count() > 0 && $ItemBin[0]->uom_id) {
                     $itemBinLocationName = WaUnitOfMeasure::find($ItemBin[0]->uom_id)->title;
                     $relatedItem->uom = $itemBinLocationName;
                 } else {
@@ -624,9 +716,83 @@ class InternalRequisitionController extends Controller
                 $childs = [];
                 WaInternalRequisitionItem::where('wa_internal_requisition_id', $row->id)->delete();
                 foreach ($inventory as $key => $value) {
+                    $quantity = @$request->item_quantity[$value->id];
+                    $originalPrice = @$request->item_selling_price[$value->id];
+                    
+                    // Check for discount bands
+                    $discountBand = DiscountBand::where('inventory_item_id', $value->id)
+                        ->where('status', 'APPROVED')
+                        ->where(function ($query) use ($quantity) {
+                            $query->where('from_quantity', '<=', $quantity)
+                                ->where(function($q) use ($quantity) {
+                                    $q->where('to_quantity', '>=', $quantity)
+                                      ->orWhereNull('to_quantity');
+                                });
+                        })
+                        ->orderBy('from_quantity', 'desc')
+                        ->first();
+                    
+                    $discountAmount = 0;
+                    $finalPrice = $originalPrice;
+                    
+                    if ($discountBand) {
+                        $discountAmount = $discountBand->discount_amount; // Per unit discount
+                        $finalPrice = max(0, $originalPrice - $discountBand->discount_amount);
+                    }
+                    
+                    // Check for Buy X Get Y promotions
+                    $promotion = ItemPromotion::where('inventory_item_id', $value->id)
+                        ->where('status', 'active')
+                        ->whereNotNull('promotion_item_id')
+                        ->where(function ($query) {
+                            $today = \Carbon\Carbon::today();
+                            $query->where('from_date', '<=', $today)
+                                ->where(function ($subQuery) use ($today) {
+                                    $subQuery->where('to_date', '>=', $today)
+                                             ->orWhereNull('to_date');
+                                });
+                        })
+                        ->first();
+                        
+                    if ($promotion) {
+                        $promotionBatches = floor($quantity / (float)$promotion->sale_quantity);
+                        if ($promotionBatches > 0) {
+                            $promotionQty = $promotionBatches * $promotion->promotion_quantity;
+                            $promotionItem = WaInventoryItem::find($promotion->promotion_item_id);
+                            
+                            if ($promotionItem) {
+                                // Add free item to childs array
+                                $childs[] = [
+                                    'wa_internal_requisition_id' => $row->id,
+                                    'wa_inventory_item_id' => $promotionItem->id,
+                                    'quantity' => $promotionQty,
+                                    'standard_cost' => $promotionItem->standard_cost,
+                                    'selling_price' => 0, // Free item
+                                    'total_cost' => 0, // Free item
+                                    'tax_manager_id' => $promotionItem->tax_manager_id,
+                                    'vat_rate' => 0,
+                                    'vat_amount' => 0,
+                                    'total_cost_with_vat' => 0,
+                                    'created_at' => date('Y-m-d H:i:s'),
+                                    'store_location_id' => $getLoggeduserProfile->store_location_id,
+                                    'updated_at' => date('Y-m-d H:i:s'),
+                                    'hs_code' => $promotionItem->hs_code,
+                                    'discount' => 0,
+                                ];
+                                
+                                \Log::info("Credit Invoice Update: Free item added", [
+                                    'promotion_item_id' => $promotionItem->id,
+                                    'promotion_qty' => $promotionQty,
+                                    'customer_bought' => $quantity,
+                                    'promotion_batches' => $promotionBatches
+                                ]);
+                            }
+                        }
+                    }
+                    
                     $vat_rate = 0;
                     $vat_amount = 0;
-                    $totalcost = @$request->item_selling_price[$value->id] * (@$request->item_quantity[$value->id]);
+                    $totalcost = $finalPrice * $quantity;
                     if ($value->tax_manager_id && $value->getTaxesOfItem) {
                         $vat_rate = $value->getTaxesOfItem->tax_value;
                         $vat_amount = $totalcost - (($totalcost * 100) / ($vat_rate + 100));
@@ -634,17 +800,18 @@ class InternalRequisitionController extends Controller
                     $childs[] = [
                         'wa_internal_requisition_id' => $row->id,
                         'wa_inventory_item_id' => $value->id,
-                        'quantity' => @$request->item_quantity[$value->id],
+                        'quantity' => $quantity,
                         'standard_cost' => $value->standard_cost,
-                        'selling_price' => @$request->item_selling_price[$value->id],
+                        'selling_price' => $originalPrice, // Store original price
                         'total_cost' => $totalcost,
                         'vat_rate' => $vat_rate,
                         'tax_manager_id' => $value->tax_manager_id,
                         'vat_amount' => $vat_amount,
-                        'total_cost_with_vat' => ($totalcost),
+                        'total_cost_with_vat' => $totalcost,
                         'created_at' => date('Y-m-d H:i:s'),
                         'store_location_id' => $value->store_location_id,
                         'updated_at' => date('Y-m-d H:i:s'),
+                        'discount' => $discountAmount, // Per unit discount
                     ];
                 }
                 WaInternalRequisitionItem::insert($childs);
@@ -755,7 +922,7 @@ class InternalRequisitionController extends Controller
 
         $row = WaInternalRequisition::where('requisition_no', $requisition_no)->first();
 
-        $pdf = PDF::loadView('admin.internalrequisition.print', compact('row'));
+        $pdf = PDF::loadView('admin.salesinvoice.print', compact('row'));
         return $pdf->download($row . '.pdf');
     }
 
@@ -1055,5 +1222,118 @@ class InternalRequisitionController extends Controller
         }
 
         return response()->json(['success' => false, 'message' => 'Invalid OTP.']);
+    }
+
+    /**
+     * Calculate discount for inventory item based on quantity
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function calculateItemDiscount(Request $request)
+    {
+        $validation = \Validator::make($request->all(), [
+            'inventory_item_id' => 'required|exists:wa_inventory_items,id',
+            'item_quantity' => 'required|numeric|min:1',
+        ]);
+        
+        if ($validation->fails()) {
+            return response()->json([
+                'result' => 0,
+                'errors' => $validation->errors()
+            ], 403);
+        }
+
+        $inventory_item_id = $request->inventory_item_id;
+        $quantity = $request->item_quantity;
+        
+        $discount = 0;
+        $discountDescription = null;
+        $discountedPrice = null;
+        $originalPrice = null;
+        
+        // Get the item
+        $item = WaInventoryItem::find($inventory_item_id);
+        if (!$item) {
+            return response()->json([
+                'result' => 0,
+                'message' => 'Item not found'
+            ], 404);
+        }
+        
+        $originalPrice = $item->selling_price;
+        
+        // Find applicable discount band
+        $discountBand = DiscountBand::where('inventory_item_id', $inventory_item_id)
+            ->where('status', 'APPROVED')
+            ->where(function ($query) use ($quantity) {
+                $query->where('from_quantity', '<=', $quantity)
+                    ->where(function($q) use ($quantity) {
+                        $q->where('to_quantity', '>=', $quantity)
+                          ->orWhereNull('to_quantity');
+                    });
+            })
+            ->orderBy('from_quantity', 'desc')
+            ->first();
+            
+        if ($discountBand) {
+            $discount = $discountBand->discount_amount * $quantity;
+            $discountedPrice = max(0, $item->selling_price - $discountBand->discount_amount);
+            $discountDescription = "Discount of KSh {$discountBand->discount_amount} per unit for quantity {$discountBand->from_quantity}" . 
+                                 ($discountBand->to_quantity ? " to {$discountBand->to_quantity}" : "+");
+        } else {
+            $discountedPrice = $originalPrice;
+        }
+        
+        return response()->json([
+            'result' => 1,
+            'discount' => $discount,
+            'discount_description' => $discountDescription,
+            'discounted_price' => $discountedPrice,
+            'original_price' => $originalPrice,
+            'item_id' => $inventory_item_id,
+            'quantity' => $quantity
+        ]);
+    }
+
+    /**
+     * Test discount calculation for debugging
+     * @param int $itemId
+     * @param int $quantity
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testDiscount($itemId, $quantity)
+    {
+        $item = WaInventoryItem::find($itemId);
+        if (!$item) {
+            return response()->json(['error' => 'Item not found']);
+        }
+
+        $discountBands = DiscountBand::where('inventory_item_id', $itemId)
+            ->where('status', 'APPROVED')
+            ->orderBy('from_quantity', 'asc')
+            ->get();
+
+        $applicableDiscount = DiscountBand::where('inventory_item_id', $itemId)
+            ->where('status', 'APPROVED')
+            ->where(function ($query) use ($quantity) {
+                $query->where('from_quantity', '<=', $quantity)
+                    ->where(function($q) use ($quantity) {
+                        $q->where('to_quantity', '>=', $quantity)
+                          ->orWhereNull('to_quantity');
+                    });
+            })
+            ->orderBy('from_quantity', 'desc')
+            ->first();
+
+        return response()->json([
+            'item' => $item->title,
+            'quantity' => $quantity,
+            'original_price' => $item->selling_price,
+            'all_discount_bands' => $discountBands,
+            'applicable_discount' => $applicableDiscount,
+            'discounted_price' => $applicableDiscount ? 
+                max(0, $item->selling_price - $applicableDiscount->discount_amount) : 
+                $item->selling_price
+        ]);
     }
 }

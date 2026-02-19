@@ -95,7 +95,22 @@
                 '</tr>';
 
             $(document).on('click', '.addNewrow', function() {
-                $(".destination_items").select2('destroy');
+                // Use safe Select2 destroy method
+                if (typeof $.fn.safeSelect2Destroy === 'function') {
+                    $(".destination_items").safeSelect2Destroy();
+                } else {
+                    // Fallback to manual safe destroy
+                    $(".destination_items").each(function() {
+                        if ($(this).hasClass('select2-hidden-accessible')) {
+                            try {
+                                $(this).select2('destroy');
+                            } catch (e) {
+                                console.warn('Select2 destroy failed:', e);
+                            }
+                        }
+                    });
+                }
+                
                 $('.assigneditems tbody').append(item);
                 var assigneditems = $('.assigneditems tbody tr');
                 $.each(assigneditems, function(indexInArray, valueOfElement) {
@@ -111,7 +126,7 @@
         })
 
         function destinated_item() {
-            $(".destination_items").select2({
+            var select2Options = {
                 ajax: {
                     url: "{{ route('maintain-items.inventoryDropdown', ['id' => $item->id]) }}",
                     dataType: 'json',
@@ -128,7 +143,25 @@
                     },
                     cache: true
                 }
-            });
+            };
+
+            // Use safe Select2 initialization
+            if (typeof $.fn.safeSelect2 === 'function') {
+                $(".destination_items").safeSelect2(select2Options);
+            } else {
+                // Fallback to manual safe initialization
+                $(".destination_items").each(function() {
+                    var $this = $(this);
+                    try {
+                        if ($this.hasClass('select2-hidden-accessible')) {
+                            $this.select2('destroy');
+                        }
+                        $this.select2(select2Options);
+                    } catch (e) {
+                        console.warn('Select2 initialization failed:', e);
+                    }
+                });
+            }
         }
     </script>
 @endpush

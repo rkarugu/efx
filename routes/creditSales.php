@@ -26,6 +26,8 @@ Route::group(['prefix' => 'admin','namespace' => 'Admin', 'middleware' => 'Admin
     Route::resource('sales-invoice', InternalRequisitionController::class);
     Route::get('sales-invoice/returns/pending', [SalesInvoiceReturnController::class, 'showInitialReturnsList'])->name('transfers.return_list');
     Route::get('sales-invoice/search/items', [\App\Http\Controllers\Admin\InternalRequisitionController::class, 'searchInventory'])->name('sales-invoice.search');
+    Route::get('sales-invoice/calculate-discount', [\App\Http\Controllers\Admin\InternalRequisitionController::class, 'calculateItemDiscount'])->name('sales-invoice.calculate-discount');
+    Route::get('sales-invoice/test-discount/{itemId}/{quantity}', [\App\Http\Controllers\Admin\InternalRequisitionController::class, 'testDiscount'])->name('sales-invoice.test-discount');
     /*manage Cheque Banks*/
     Route::get('cheque-banks', [ChequeBankController::class, 'index'])->name('cheque-banks');
     Route::post('cheque-banks', [ChequeBankController::class, 'store'])->name('cheque-banks.store');

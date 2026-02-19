@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\DeliverySchedule;
 use App\FuelLpo;
 use App\NewFuelEntry;
+use App\SalesmanShift;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use DB;
@@ -21,6 +22,7 @@ use App\Model\WaLocationAndStore;
 use Session;
 use Excel;
 use PDF;
+use Illuminate\Validation\ValidationException;
 
 class GrossProfitReportController extends Controller
 {
@@ -332,6 +334,38 @@ class GrossProfitReportController extends Controller
 
     }
 
+    public function getSalesmanShifts(Request $request)
+    {
+        $salesmanId = $request->salesman_id;
+        
+        if (!$salesmanId) {
+            return response()->json([]);
+        }
+        
+        try {
+            $shifts = \App\SalesmanShift::where('salesman_id', $salesmanId)
+                ->where('status', 'close')
+                ->orderBy('id', 'DESC')
+                ->with(['salesman', 'salesman_route'])
+                ->get()
+                ->mapWithKeys(function ($shift) {
+                    $routeName = $shift->salesman_route ? $shift->salesman_route->route_name : 'Unknown Route';
+                    $salesmanName = $shift->salesman ? $shift->salesman->name : 'Unknown Salesman';
+                    $shiftDate = $shift->created_at ? $shift->created_at->format('Y-m-d') : 'Unknown Date';
+                    $shiftType = ucfirst($shift->shift_type ?? 'Unknown');
+                    $status = ucfirst($shift->status ?? 'Unknown');
+                    
+                    $label = "{$salesmanName} - {$routeName} ({$shiftDate}) - {$shiftType} - {$status}";
+                    return [$shift->id => $label];
+                });
+
+            return response()->json($shifts);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching salesman shifts: ' . $e->getMessage());
+            return response()->json([], 500);
+        }
+    }
+
     public function routeProfitibilityReport(Request $request)
     {
         $logged_user_info = getLoggeduserProfile();
@@ -344,64 +378,63 @@ class GrossProfitReportController extends Controller
 
         $title = 'Route Profitability Report';
         $stores = getAllsalesmanList();
-        $data = [];
-        if ($request->manage) {
-            $data = WaInventoryItem::join('wa_stock_moves', 'wa_inventory_items.id', '=', 'wa_stock_moves.wa_inventory_item_id');
-            $data = $data->where('wa_stock_moves.document_no', 'LIKE', "%INV-%");
+        $data = collect();
 
-//            if ($request->salesman_id && $request->salesman_id != '-1') {
-//                $data = $data->where('wa_stock_moves.wa_location_and_store_id', $request->input('salesman_id'));
-//            }
+        if ($request->get('manage')) {
+            $validated = $request->validate([
+                'salesman_id' => ['required', 'integer', 'exists:users,id'],
+                'shift_id' => ['required', 'array', 'min:1'],
+                'shift_id.*' => ['integer', 'exists:salesman_shifts,id'],
+            ]);
 
-            if ($request->shift_id) {
-                $data = $data->where('wa_stock_moves.shift_id', $request->shift_id);
+            $selectedShiftIds = SalesmanShift::query()
+                ->whereIn('id', $validated['shift_id'])
+                ->where('salesman_id', $validated['salesman_id'])
+                ->pluck('id')
+                ->toArray();
+
+            if (empty($selectedShiftIds)) {
+                throw ValidationException::withMessages([
+                    'shift_id' => 'Selected shifts do not belong to the chosen salesman.',
+                ]);
             }
 
-            $data = $data->select(DB::raw('SUM(wa_stock_moves.qauntity) as total_quantity'),
-                DB::raw('SUM(wa_stock_moves.standard_cost * wa_stock_moves.qauntity) as standard_cost_sum'),
-                DB::raw('SUM(wa_inventory_items.selling_price * wa_stock_moves.qauntity * -1) as price_sum'),
-                'wa_inventory_items.title')
-                ->groupBy('wa_inventory_items.id')
-                ->get();
-        }
+            $data = $this->buildRouteProfitabilityData($validated['salesman_id'], $selectedShiftIds);
 
-        if ($request->manage == 'pdf') {
-            $schedule = DeliverySchedule::with(['route', 'vehicle'])->find($request->schedule_id);
-            $fuelLpos = FuelLpo::latest()->where('vehicle_id', $schedule->vehicle_id)->where('fueled', true)->first();
-            $fuelEntry = NewFuelEntry::where('fuel_lpo_id')->first();
-            $telematicsData = [
-                'vehicle_registration_number' => $schedule->vehicle->license_plate_number,
-                'distance_formatted' => "0.14 Km",
-                'fuel' => 2,
-                'fuel_formatted' => '2 L',
-                'fuel_cost' => 200.00,
-                'fuel_cost_formatted' => "KES. " . number_format(200.00, 2),
-                'total_fuel_cost' => 400,
-                'total_fuel_cost_formatted' => "KES. " . number_format(400, 2),
-            ];
+            if ($request->manage === 'pdf') {
+                if ($data->isEmpty()) {
+                    Session::flash('warning', 'No data found for the selected salesman and shifts.');
+                    return redirect()->back();
+                }
 
+                $schedule = null;
+                if ($request->filled('schedule_id')) {
+                    $schedule = DeliverySchedule::with(['route', 'vehicle'])->find($request->schedule_id);
+                }
 
-//            $telematics = new \App\Telematics();
-//            $report = $telematics->getGeneralInformationReport();
-//            if ($report && isset($report['url'])) {
-//                $json = file_get_contents($report['url']);
-//                $json = json_decode($json, true);
-//                $metaData = $json['items'][0]['table']['totals'];
-//
-//                $fuelConsumed = $metaData['fuel_consumption_list'][0]['value'];
-//                $fuelConsumedRawValue = (float)(str_replace(' L', '', $fuelConsumed));
-//
-//                $telematicsData['distance_formatted'] = $metaData['distance'];
-//                $telematicsData['fuel_formatted'] = $fuelConsumed;
-//                $telematicsData['fuel'] = $fuelConsumedRawValue;
-//                $telematicsData['total_fuel_cost'] = $fuelConsumedRawValue * $telematicsData['fuel_cost'];
-//                $telematicsData['total_fuel_cost_formatted'] = "KES. " . number_format($telematicsData['total_fuel_cost'], 2);
-//            }
+                $fuelLpos = null;
+                if ($schedule?->vehicle_id) {
+                    $fuelLpos = FuelLpo::latest()
+                        ->where('vehicle_id', $schedule->vehicle_id)
+                        ->where('fueled', true)
+                        ->first();
+                }
 
-            $location_name = $request->salesman_id && $request->salesman_id != '-1' ? @$stores[$request->salesman_id] : "All";
-            $pdf = PDF::loadView('admin.gross_profit_detailed_reports.route_profitibility_report_pdf', compact('data', 'title', 'location_name', 'telematicsData'));
-            return $pdf->download('Route-Profitability-Report-' . $location_name . '.pdf');
+                $telematicsData = [
+                    'vehicle_registration_number' => $schedule?->vehicle?->license_plate_number ?? 'N/A',
+                    'distance_formatted' => "0.00 Km",
+                    'fuel' => 0,
+                    'fuel_formatted' => '0 L',
+                    'fuel_cost' => 200.00,
+                    'fuel_cost_formatted' => "KES. " . number_format(200.00, 2),
+                    'total_fuel_cost' => 0,
+                    'total_fuel_cost_formatted' => "KES. " . number_format(0, 2),
+                ];
 
+                $location_name = $stores[$validated['salesman_id']] ?? 'All';
+                $pdf = PDF::loadView('admin.gross_profit_detailed_reports.route_profitibility_report_pdf', compact('data', 'title', 'location_name', 'telematicsData'));
+                return $pdf->download('Route-Profitability-Report-' . $location_name . '.pdf');
+            }
         }
 
         $model = "route-profitibility-report";
@@ -410,4 +443,42 @@ class GrossProfitReportController extends Controller
 
 
     }
+
+    protected function buildRouteProfitabilityData(int $salesmanId, array $shiftIds)
+    {
+        $returnsSubQuery = DB::table('wa_inventory_location_transfer_items as transfer_items')
+            ->select(
+                'transfer_items.wa_internal_requisition_item_id',
+                DB::raw('SUM(return_items.return_quantity) as total_return_qty'),
+                DB::raw('SUM(return_items.return_quantity * transfer_items.selling_price) as total_return_amount')
+            )
+            ->leftJoin('wa_inventory_location_transfer_item_returns as return_items', 'return_items.wa_inventory_location_transfer_item_id', '=', 'transfer_items.id')
+            ->groupBy('transfer_items.wa_internal_requisition_item_id');
+
+        return DB::table('wa_internal_requisition_items as items')
+            ->join('wa_internal_requisitions as orders', 'orders.id', '=', 'items.wa_internal_requisition_id')
+            ->join('salesman_shifts as shifts', 'shifts.id', '=', 'orders.wa_shift_id')
+            ->join('wa_inventory_items', 'wa_inventory_items.id', '=', 'items.wa_inventory_item_id')
+            ->leftJoinSub($returnsSubQuery, 'returns', function ($join) {
+                $join->on('returns.wa_internal_requisition_item_id', '=', 'items.id');
+            })
+            ->whereIn('shifts.id', $shiftIds)
+            ->where('shifts.salesman_id', $salesmanId)
+            ->select([
+                'wa_inventory_items.title as title',
+                DB::raw('SUM(items.quantity) as ordered_quantity'),
+                DB::raw('SUM(COALESCE(returns.total_return_qty, 0)) as returned_quantity'),
+                DB::raw('SUM(items.quantity - COALESCE(returns.total_return_qty, 0)) as total_quantity'),
+                DB::raw('SUM(items.total_cost_with_vat) - SUM(COALESCE(returns.total_return_amount, 0)) as price_sum'),
+                DB::raw('SUM((items.quantity - COALESCE(returns.total_return_qty, 0)) * items.standard_cost) as standard_cost_sum'),
+                DB::raw('
+                    (SUM(items.total_cost_with_vat) - SUM(COALESCE(returns.total_return_amount, 0)))
+                    - SUM((items.quantity - COALESCE(returns.total_return_qty, 0)) * items.standard_cost) as gross_profit
+                '),
+            ])
+            ->groupBy('items.wa_inventory_item_id', 'wa_inventory_items.title')
+            ->orderByDesc('gross_profit')
+            ->get();
+    }
 }
+

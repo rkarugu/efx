@@ -109,10 +109,16 @@ class VehicleController extends Controller
     public function getAvailableDrivers(Request $request): JsonResponse
     {
         try {
-            $users = User::select('id', 'name', 'role_id', 'restaurant_id')
+            $query = User::select('id', 'name', 'role_id', 'restaurant_id')
                 ->doesntHave('vehicle')
-                ->where('role_id', 6)
-                ->get();
+                ->where('role_id', 6);
+
+            // Filter by branch if provided
+            if ($request->has('branch_id') && $request->branch_id) {
+                $query->where('restaurant_id', $request->branch_id);
+            }
+
+            $users = $query->get();
 
             return $this->jsonify(['data' => $users], 200);
         } catch (\Throwable $e) {
@@ -122,10 +128,16 @@ class VehicleController extends Controller
     public function getAvailableTurnboys(Request $request): JsonResponse
     {
         try {
-            $users = User::select('id', 'name', 'role_id', 'restaurant_id')
+            $query = User::select('id', 'name', 'role_id', 'restaurant_id')
                 ->doesntHave('vehicle')
-                ->where('role_id', 184)
-                ->get();
+                ->where('role_id', 184);
+
+            // Filter by branch if provided
+            if ($request->has('branch_id') && $request->branch_id) {
+                $query->where('restaurant_id', $request->branch_id);
+            }
+
+            $users = $query->get();
 
             return $this->jsonify(['data' => $users], 200);
         } catch (\Throwable $e) {

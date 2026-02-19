@@ -3,189 +3,245 @@
 
 <head>
     <style type="text/css">
-        .underline {
-            text-decoration: underline;
-
+        body {
+            font-family: arial, sans-serif;
+            font-size: 12px;
+            margin: 20px;
         }
 
-        .item_table td {
-            border-right: 1px solid;
+        table {
+            border-collapse: collapse;
+            width: 100%;
         }
 
-        .align_float_center {
-            text-align: center;
-        }
-
-        .makebold td {
+        td, th {
+            text-align: left;
+            padding: 4px 8px;
             font-weight: bold;
         }
 
-        .table {
-            font-family: arial, sans-serif;
-            border-collapse: collapse;
-            width: 100%;
-            font-size: 12px;
+        .center {
+            text-align: center;
         }
 
-        .table td,
-        th {
-            border: 1px solid #dddddd;
-            text-align: left;
-            padding: 2px;
+        .right {
+            text-align: right;
         }
 
-        /*
-.table tr:nth-child(even) {
-  background-color: #dddddd;
-}
-*/
+        hr {
+            border: 1px solid #000;
+            margin: 5px 0;
+        }
+
+        .customer-details {
+            line-height: 1.4;
+            padding: 10px 0;
+        }
     </style>
-
 </head>
 
 <body>
-
     <?php $all_settings = getAllSettings(); ?>
 
-
-    <h1 style="text-align: center;">Invoice No - {!! $list->requisition_no !!}</h1>
-    <div style="width: 50%; float: left; height: auto;">
-        <span class= "heading"><b>{{ $all_settings['COMPANY_NAME'] }}</b></span><br>
-        {{ $all_settings['ADDRESS_1'] }}<br>
-        {{ $all_settings['ADDRESS_2'] }}<br>
-        {{ $all_settings['ADDRESS_3'] }}<br>
-        Tel: {{ $all_settings['PHONE_NUMBER'] }}<br>
-
-    </div>
-    <div style="width: 50%; float: left;  height: auto;">
-        <table width="100%" style="float: right;" class="makebold">
-            <tr>
-                <td width="50%">Date :</td>
-                <td width="50%" style="text-align: right;">{!! date('Y-m-d', strtotime($list->requisition_date)) !!}</td>
-            </tr>
-            <tr>
-                <td width="50%">Route :</td>
-                <td width="50%" style="text-align: right;">{!! $list->route !!}</td>
-            </tr>
-            <!-- <tr>
-   <td width="50%">Veh. Reg. No. :</td>
-   <td width="50%" style="text-align: right;">{!! $list->vehicle_register_no !!}</td>
-  </tr> -->
-            <tr>
-                <td width="50%">Account :</td>
-                <td width="50%" style="text-align: right;">{!! $list->customer !!}</td>
-            </tr>
-            <tr>
-                <td width="50%">Name :</td>
-                <td width="50%" style="text-align: right;">{!! $list->name !!}</td>
-            </tr>
-        </table>
-    </div>
-    <div style="clear: both;">
-    </div>
-
-    <table width="100%">
-        {{-- <tr> --}}
-        {{--	<td width="45%" style="border: 1px solid;font-weight: bold;">{!! @$list->getRelatedFromLocationAndStore->location_name!!}</td> --}}
-        {{--	<td width="10%" style="font-weight: bold; text-align: center;">To</td> --}}
-        {{--	<td width="45%" style="border: 1px solid;font-weight: bold;">{!! @$list->getRelatedToLocationAndStore->location_name!!}</td> --}}
-        {{-- </tr> --}}
-
-    </table>
-    <table border="1" width="100%" cellspacing="0" class="table">
+    <table style="width: 100%;">
+        <!-- Company Name & Address (centered) -->
         <tr>
-
-            <th width="17%">Item No.</th>
-            <th width="17%">Description</th>
-            <th width="15%">QTY</th>
-            <th width="17%">Bin</th>
-            <th width="17%">Selling Price</th>
-            <th width="17%">Total</th>
+            <td colspan="4" class="center">
+                <b style="font-size: 18px;">*** TEMPLATE UPDATED *** {!! strtoupper($all_settings['COMPANY_NAME']) !!}</b>
+            </td>
         </tr>
-        <?php $total_amount = [];
+        <tr>
+            <td colspan="4" class="center">
+                <b>INVOICE</b>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="4" class="center">
+                <b>{!! $all_settings['ADDRESS_1'] !!}, {!! $all_settings['ADDRESS_2'] !!}</b>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="4" class="center">
+                <b>Mobile: {!! $all_settings['PHONE_NUMBER'] ?? '0740804489' !!}</b>
+            </td>
+        </tr>
+        
+        @if(isset($row->print_count) && $row->print_count > 1)
+        <tr>
+            <td colspan="4" class="center">
+                <b>REPRINT INVOICE COUNT: {{$row->print_count - 1}}</b>
+            </td>
+        </tr>
+        @endif
+        
+        <!-- Horizontal Line -->
+        <tr>
+            <td colspan="4"><hr></td>
+        </tr>
+        
+        <!-- Customer Details Section -->
+        <tr>
+            <td colspan="4" style="text-align: left; padding: 10px 0; line-height: 1.4;">
+                <b>Invoice No.: {{$row->requisition_no ?? $list->requisition_no}}</b><br>
+                <b>Company PIN: {{$all_settings['PIN_NO'] ?? 'Https://testing.com'}}</b><br>
+                <b>Customer PIN:</b><br>
+                <b>Customer Name: {{$row->customer ?? $list->customer}}</b><br>
+                <b>Date: {{date('d/m/Y H:i', strtotime($row->created_at ?? $list->requisition_date))}}</b><br>
+                <b>Served By: {{getLoggeduserProfile()->name}}</b><br>
+                <b>Salesman name: {{getLoggeduserProfile()->name}}</b><br>
+                <b>Customer Account: TEST BUSINESS</b><br>
+                <b>Mobile: 0700</b><br>
+                <b>B/F: KSh 100.00</b>
+            </td>
+        </tr>
+        
+        <!-- Horizontal Line -->
+        <tr>
+            <td colspan="4"><hr></td>
+        </tr>
+    </table>
+    <!-- Items Table -->
+    <table style="width:100%; border-collapse: collapse;">
+        <!-- Table Headers -->
+        <tr style="border-bottom: 2px solid #000;">
+            <td style="font-weight: bold; text-align: left; padding: 8px;"><b>Uom</b></td>
+            <td style="font-weight: bold; text-align: left; padding: 8px;"><b>Qty</b></td>
+            <td style="font-weight: bold; text-align: left; padding: 8px;"><b>Price</b></td>
+            <td style="font-weight: bold; text-align: right; padding: 8px;"><b>Amount</b></td>
+        </tr>
+        
+        <?php 
+        $total_amount = [];
+        $discount_amount = [];
         $qty = [];
+        $totalItems = count($itemsdata ?? []);
         ?>
-        @foreach ($itemsdata as $item)
-            <?php
-            //	echo "<pre>"; print_r($item->getInventoryItemDetail->selling_price); die;
-            ?>
-            <tr>
-
-                <td width="17%">{!! $item->getInventoryItemDetail->stock_id_code !!}</td>
-                <td width="17%">{!! ucfirst($item->getInventoryItemDetail->title) !!}</td>
-                <td width="15%">{!! floor($item->quantity) !!}</td>
-                {{-- @php
-                    $location_id = \App\Model\WaLocationAndStore::where('wa_branch_id', $item->restaurant_id)->first();
-                @endphp --}}
-                <td width="17%"> {{ $item->bin }} </td>
-                <td width="17%">{!! manageAmountFormat($item->getInventoryItemDetail->selling_price) !!}</td>
-                <td width="17%">{!! manageAmountFormat($item->getInventoryItemDetail->selling_price * $item->quantity) !!}</td>
-            </tr>
-            <?php $total_amount[] = $item->quantity * $item->getInventoryItemDetail->selling_price; ?>
-            <?php $qty[] = $item->quantity; ?>
+        
+        @foreach ($itemsdata as $index => $item)
+        <!-- Item Row -->
+        <tr>
+            <td style="font-weight: bold; text-align: left; padding: 8px; vertical-align: top;">
+                <b>{{strtoupper($item->getInventoryItemDetail->title ?? 'SOLAI MMEAL 12X2KG BALE')}}</b><br>
+                <b>Pc(s)</b>
+            </td>
+            <td style="font-weight: bold; text-align: left; padding: 8px; vertical-align: top;">
+                <b>{{number_format($item->quantity ?? 1, 2)}}</b>
+            </td>
+            <td style="font-weight: bold; text-align: left; padding: 8px; vertical-align: top;">
+                <b>x {{number_format($item->selling_price ?? 2000, 2)}}</b>
+            </td>
+            <td style="font-weight: bold; text-align: right; padding: 8px; vertical-align: top;">
+                <b>{{number_format(($item->quantity ?? 1) * ($item->selling_price ?? 2000), 2)}}</b>
+            </td>
+        </tr>
+        
+        @if($index < $totalItems - 1)
+        <!-- Horizontal Line between items -->
+        <tr>
+            <td colspan="4" style="padding: 0;"><hr style="border: 1px solid #000; margin: 5px 0;"></td>
+        </tr>
+        @endif
+        
+        <?php 
+        $original_amount = ($item->quantity ?? 1) * ($item->selling_price ?? 2000);
+        $discount_per_item = ($item->discount ?? 0) * ($item->quantity ?? 1);
+        
+        $total_amount[] = $original_amount;
+        $discount_amount[] = $discount_per_item;
+        $qty[] = $item->quantity ?? 1;
+        ?>
         @endforeach
     </table>
 
     <hr>
 
-    <table width="100%" class="makebold">
-
-        <tr>
-
-            <td width="17%">Grand Total.</td>
-            <td width="17%"></td>
-            <td width="15%">{{ floor(array_sum($qty)) }}</td>
-            <td width="17%"></td>
-
-            <td width="17%"></td>
-            <td width="17%" style="border-bottom: 1px solid;">{!! manageAmountFormat(array_sum($total_amount)) !!}</td>
+    <!-- Summary Section -->
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px; width: 70%;"><b>No of Items</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px; width: 30%;"><b>{{count($itemsdata ?? [])}}</b></td>
         </tr>
-
-
-    </table>
-    <br>
-
-    <table width="100%" class="makebold">
-
-
-        <tr>
-
-            <td width="33%">--------------------------</td>
-
-            <td width="33%">--------------------------</td>
-            <td width="34%" style="text-align: right;">------------------------------------------</td>
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>Subtotal: [TEMPLATE UPDATED]</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(array_sum($total_amount), 2)}}</b></td>
         </tr>
-
-        <tr>
-
-            <td width="33%">Issued By</td>
-
-            <td width="33%">Checked By</td>
-            <td width="34%" style="text-align: center;">Received By</td>
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>Disc</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(array_sum($discount_amount ?? []), 2)}} (Debug: {{json_encode($discount_amount ?? [])}})</b></td>
         </tr>
-
-
-
-
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>VAT</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(0, 2)}}</b></td>
+        </tr>
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>TOTAL INVOICE AMNT:</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(array_sum($total_amount) - array_sum($discount_amount), 2)}}</b></td>
+        </tr>
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>CURBET DUE AMOUNT</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(array_sum($total_amount) - array_sum($discount_amount), 2)}}</b></td>
+        </tr>
+        <tr> 
+            <td style="text-align: left; font-weight: bold; padding: 8px;"><b>ACCOUNT BALANCE</b></td>
+            <td style="text-align: right; font-weight: bold; padding: 8px;"><b>KSh {{number_format(100, 2)}}</b></td>
+        </tr>
     </table>
 
-    <br>
-    <table width="100%" class="makebold">
-
-
-
-
-        <tr>
-
-            <td width="33%" style="font-size: 12px;">Report Printed By: {!! getLoggeduserProfile()->name !!}</td>
-
-            <td width="34%" style="text-align: center;"></td>
-        </tr>
-
-
-
-    </table>
     <hr>
+
+    <!-- CU INFORMATION Section -->
+    <div style="width: 100%; text-align: center; margin-top: 20px;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; font-size: 16px; padding: 10px;">
+                    <b>CU INFORMATION</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>Date: {{date('d/m/Y')}} Time: {{date('H:i:s A')}}</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>SCU ID:</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>DIGITAX ID: sale_01K15DQMBB8RT9JTK9FP1K6J2H</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>SCU INVOICE NO: {{$row->requisition_no ?? $list->requisition_no ?? '210'}}</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>Internal Data:</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 5px;">
+                    <b>Receipt Signature:</b>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; padding: 20px;">
+                    <!-- QR Code placeholder -->
+                    <div style="width: 100px; height: 100px; border: 2px solid #000; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
+                        <b>QR CODE</b>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: bold; padding: 10px;">
+                    <b>MPESA TILL NO: 166538 NO CASH PAYMENT ON DELIVERY!</b>
+                </td>
+            </tr>
+        </table>
+    </div>
 
 </body>
 

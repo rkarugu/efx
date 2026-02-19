@@ -9,3 +9,23 @@
 /public/hot
 node_modules/
 storage/logs/laravel.log
+
+# Laravel cache files
+/storage/framework/views/*.php
+/storage/framework/cache/*
+/storage/framework/sessions/*
+
+# Temporary and backup files
+*.bak
+*.new
+commit_message*.txt
+commit_msg*.txt
+complete_deliveries.php
+fix_returns.php
+sync_return_reasons.php
+sync_existing_payments.php
+fix_payment_records.php
+fix_invoice_timestamps.php
+fix_invoice_times_from_orders.php
+check_invoice_times.php
+debug_dates.php

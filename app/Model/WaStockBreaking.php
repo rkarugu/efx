@@ -17,10 +17,10 @@ class WaStockBreaking extends Model
     protected $guarded = [];
 
     public function items(){
-        return $this->HasMany(WaStockBreakingItem::Class,'wa_stock_breaking_id');
+        return $this->HasMany(WaStockBreakingItem::class,'wa_stock_breaking_id');
     }
     public function user(){
-        return $this->belongsTo(User::Class,'user_id');
+        return $this->belongsTo(User::class,'user_id');
     }
 
     public function posRequest(): BelongsTo

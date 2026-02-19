@@ -35,7 +35,15 @@
 @push('scripts')
     <script>
         $(function() {
-            $("#supplierHistory").select2();
+            // Safe Select2 initialization
+            try {
+                if ($("#supplierHistory").length) {
+                    $("#supplierHistory").select2();
+                }
+            } catch (e) {
+                console.warn('Select2 initialization failed for #supplierHistory:', e);
+            }
+            
             $("#supplierHistory").change(function() {
                 refreshTable($("#priceChangeDataTable"));
             });

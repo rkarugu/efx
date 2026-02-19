@@ -31,8 +31,8 @@ class ActivePromotionsController extends Controller
 
         $currentDate = Carbon::now()->toDateString();
         $promotionsGroups = PromotionGroup::where('active', true)
-//            ->whereDate('start_time', '<=', $currentDate)
-//            ->whereDate('end_time', '>=', $currentDate)
+            ->whereDate('start_time', '<=', $currentDate)
+            ->whereDate('end_time', '>=', $currentDate)
             ->get();
 
         return view('admin.inventory.item.activePromotions.index', compact('permission','pmodule','title','model','promotionsGroups'));

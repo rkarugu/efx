@@ -261,6 +261,49 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Determine if the given user should be treated as a salesman and allowed web login.
+     * We consider a user a salesman if:
+     *  - They have an assigned route (user->route or routes relation), or
+     *  - Their role name/title contains 'sales' (case-insensitive), or
+     *  - They match known sales role IDs (e.g., 169, 170)
+     */
+    private function canSalesmanUseWeb($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        $roleName = '';
+        if (isset($user->userRole)) {
+            // Some installations use 'name', others 'title'
+            $roleName = $user->userRole->name ?? $user->userRole->title ?? '';
+        }
+
+        $hasRoute = false;
+        try {
+            // Some schemas store a direct 'route' FK, others via many-to-many
+            $hasRoute = !empty($user->route) || method_exists($user, 'routes') && $user->routes()->exists();
+        } catch (\Throwable $e) {
+            $hasRoute = !empty($user->route);
+        }
+
+        $salesRoleIds = config('salesman.sales_role_ids', [169, 170]);
+        $salesKeywords = config('salesman.sales_role_keywords', ['sales', 'salesman', 'representative']);
+        
+        $isSalesRoleId = in_array((int) $user->role_id, $salesRoleIds);
+        
+        $roleLooksSales = false;
+        foreach ($salesKeywords as $keyword) {
+            if (stripos($roleName, $keyword) !== false) {
+                $roleLooksSales = true;
+                break;
+            }
+        }
+
+        return ($hasRoute || $roleLooksSales || $isSalesRoleId);
+    }
+
 
     public function filterUsers(Request $request)
     {
@@ -456,7 +499,13 @@ class UserController extends Controller
                 ->first();
 
             $restrictedUsers = [4, 181];
-            if (!$user || !Hash::check($request->password, $user->password) || in_array($user->role_id, $restrictedUsers)) {
+            // Allow salesmen to log in via web if explicitly permitted by config
+            $allowSalesmanWebLogin = config('salesman.allow_web_login', true);
+
+            $isRestrictedRole = in_array($user?->role_id, $restrictedUsers);
+            $isSalesmanAllowed = $allowSalesmanWebLogin && $this->canSalesmanUseWeb($user);
+
+            if (!$user || !Hash::check($request->password, $user->password) || ($isRestrictedRole && !$isSalesmanAllowed)) {
                 Session::flash('danger', 'Invalid username or password');
                 return redirect()->back()->withInput(['username' => $request->username]);
             }
@@ -547,6 +596,9 @@ class UserController extends Controller
 
                 if ($user->role_id == 10003) {
                     return redirect()->intended(route('admin.chairmain-dashboard'));
+                } elseif ($user->role_id == 6) {
+                    // Redirect delivery drivers to their mobile app interface
+                    return redirect()->intended(route('delivery-driver.mobile'));
                 } elseif (Session::has('previous_url')) {
                     return redirect()->intended(Session::get('previous_url'));
                 }
@@ -685,6 +737,12 @@ class UserController extends Controller
                         }
                         $user_otp->is_used = 1;
                         $user_otp->save();
+                        
+                        // Redirect delivery drivers to their mobile app interface
+                        if ($user->role_id == 6) {
+                            return redirect()->route('delivery-driver.mobile');
+                        }
+                        
                         return redirect()->route('admin.dashboard');
                     } else {
                         Session::flash('danger', 'Invalid OTP!');

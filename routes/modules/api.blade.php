@@ -178,6 +178,7 @@ Route::group(['prefix' => 'api', 'middleware' => ['AdminLoggedIn', 'ip-blocker']
     Route::group(['prefix' => 'delivery-schedules'], function () {
         Route::get('/active', [DeliveryScheduleController::class, 'getActiveSchedules']);
         Route::get('/filter-active', [DeliveryScheduleController::class, 'getFilteredctiveSchedules']);
+        Route::get('/available-vehicles', [DeliveryScheduleController::class, 'getAvailableVehicles']);
         Route::post('/delivery-schedules/assign-vehicle', [DeliveryScheduleController::class, 'assignVehicle']);
         Route::get('/unassign-vehicle/{id}', [DeliveryScheduleController::class, 'unassignVehicle'])->name('delivery-schedules.unassignvehicles');
         Route::post('/check-geo-fence', [DeliveryScheduleController::class, 'checkGeoFence']);

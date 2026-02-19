@@ -120,7 +120,13 @@
 @push('scripts')
     <script>
         $(function() {
-            $("#storeLocation, #moveType").select2();
+            // Use safe Select2 initialization
+            if (typeof safeSelect2Init === 'function') {
+                safeSelect2Init("#storeLocation");
+                safeSelect2Init("#moveType");
+            } else {
+                $("#storeLocation, #moveType").select2();
+            }
 
             $("#storeLocation, #moveType").change(function() {
                 refreshTable($("#stockMovementDataTable"));

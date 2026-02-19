@@ -11,6 +11,36 @@
 <!-- AdminLTE App -->
 <script src="{{ asset('assets/admin/dist/js/adminlte.min.js') }}"></script>
 
+<script>
+    window.initAdminLTE = window.initAdminLTE || function () {
+        if (typeof $ !== 'undefined' && typeof $.AdminLTE !== 'undefined') {
+            $.AdminLTE.layout.activate();
+            $.AdminLTE.tree('.sidebar-menu');
+        }
+    };
+
+    (function () {
+        if (typeof window.jQuery === 'undefined') {
+            return;
+        }
+
+        if (typeof window.jQuery.AdminLTE !== 'undefined' || (typeof window.$ !== 'undefined' && typeof window.$.AdminLTE !== 'undefined')) {
+            return;
+        }
+
+        var s = document.createElement('script');
+        s.src = "{{ asset('assets/admin/dist/js/adminlte.js') }}";
+        s.onload = function () {
+            try {
+                window.initAdminLTE();
+            } catch (e) {
+                console.error('AdminLTE fallback init error:', e);
+            }
+        };
+        document.head.appendChild(s);
+    })();
+</script>
+
 <!-- DataTables -->
 <script src="{{ asset('assets/admin/bower_components/datatables.net/js/jquery.dataTables.min.js') }}"></script>
 <script src="{{ asset('assets/admin/bower_components/datatables.net-bs/js/dataTables.bootstrap.min.js') }}"></script>
@@ -22,6 +52,13 @@
 <script src="{{ asset('assets/admin/validation.js') }}"></script>
 
 <script>
+    // Setup CSRF token for all AJAX requests
+    $.ajaxSetup({
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        }
+    });
+
     Number.prototype.formatMoney = function(c, d, t) {
         let n = this,
             cc = isNaN(c = Math.abs(c)) ? 2 : c,
@@ -53,13 +90,28 @@
         console.log('AdminLTE available:', typeof $.AdminLTE !== 'undefined');
         console.log('Tree plugin available:', typeof $.fn.tree !== 'undefined');
 
-        // Initialize AdminLTE
-        if (typeof $.AdminLTE !== 'undefined') {
-            $.AdminLTE.layout.activate();
-            $.AdminLTE.tree('.sidebar-menu');
-        } else {
-            console.error('AdminLTE not available');
-        }
+        var initOrWaitForAdminLTE = function () {
+            if (typeof $.AdminLTE !== 'undefined') {
+                window.initAdminLTE();
+                return;
+            }
+
+            var attempts = 0;
+            var timer = setInterval(function () {
+                if (typeof $.AdminLTE !== 'undefined') {
+                    clearInterval(timer);
+                    window.initAdminLTE();
+                    return;
+                }
+                attempts++;
+                if (attempts >= 20) {
+                    clearInterval(timer);
+                    console.error('AdminLTE not available');
+                }
+            }, 250);
+        };
+
+        initOrWaitForAdminLTE();
         
         // Initialize SlimScroll - with error handling to prevent DOM null errors
         try {
@@ -92,17 +144,45 @@
         if (typeof $.fn.pushMenu !== 'undefined') {
             $('[data-toggle="push-menu"]').pushMenu();
         }
+
+        $(document).off('click.chapchap.sidebarToggle').on('click.chapchap.sidebarToggle', 'a.sidebar-toggle, [data-toggle="push-menu"]', function (e) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            if (typeof $.fn.pushMenu !== 'undefined') {
+                try {
+                    $(this).pushMenu('toggle');
+                    return;
+                } catch (err) {
+                }
+            }
+
+            var $body = $('body');
+            var collapseScreenSize = 767;
+            var windowWidth = $(window).width();
+
+            if (windowWidth > collapseScreenSize) {
+                $body.toggleClass('sidebar-collapse');
+            } else {
+                $body.toggleClass('sidebar-open');
+            }
+        });
         
         // Initialize Bootstrap components
         if (typeof $.fn.dropdown !== 'undefined') {
             $('.dropdown-toggle').dropdown();
         }
         
-        // Initialize modals
-        $('.modal').on('show.bs.modal', function () {
+        // Initialize modals - exclude vehicle assignment modals to prevent conflicts with Vue.js
+        $('.modal').not('#driver-assignment-modal, #turnboy-assignment-modal').on('show.bs.modal', function () {
             $(this).find('select').each(function() {
-                if (typeof $(this).select2 !== 'undefined') {
-                    $(this).select2('destroy').select2();
+                // Only initialize Select2 if the element doesn't have Vue.js v-model
+                if (typeof $(this).select2 !== 'undefined' && !$(this).attr('v-model')) {
+                    // Safely check if Select2 is already initialized
+                    if ($(this).hasClass('select2-hidden-accessible')) {
+                        $(this).select2('destroy');
+                    }
+                    $(this).select2();
                 }
             });
         });

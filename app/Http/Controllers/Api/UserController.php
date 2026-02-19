@@ -560,11 +560,21 @@ class UserController extends Controller
             }
 
             $user_name = $request->Email_PhoneNo;
+            Log::info('mobile_login_attempt', [
+                'Email_PhoneNo' => $user_name,
+                'device_id' => $request->device_id,
+                'device_type' => $request->device_type ?? null,
+            ]);
             $row = User::with(['fingerprints', 'linkedDevice', 'accessRequests', 'routes', 'routes.users'])->where('email', $user_name)
                 ->orWhere('phone_number', $user_name)
                 ->first();
-
-            if (!($row && Hash::check($request->password, $row->password))) {
+            $passwordMatches = $row ? Hash::check($request->password, $row->password) : false;
+            Log::info('mobile_login_credential_check', [
+                'user_found' => (bool)$row,
+                'user_id' => $row->id ?? null,
+                'password_matches' => $passwordMatches,
+            ]);
+            if (!($row && $passwordMatches)) {
                 return response()->json(['status' => false, 'message' => 'Invalid username or password'], 422);
             }
             if($row->role_id == 169 || $row->role_id == 170){
@@ -711,6 +721,13 @@ class UserController extends Controller
                 'device_id' => $uuid,
                 'has_fingerprints' => false,
                 'fingerprints' => [],
+                'user' => [
+                    'id' => $row->id,
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'phone_number' => $row->phone_number,
+                    'role_id' => $row->role_id,
+                ],
             ];
             if ($existingOtp) {
                 $response['otp'] = $existingOtp->otp;

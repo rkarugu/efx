@@ -121,6 +121,10 @@ class CompletedGrnController extends Controller
 
     public function printToPdf(Request $request)
     {
+        // Increase execution time and memory limit for PDF generation
+        set_time_limit(120); // 2 minutes
+        ini_set('memory_limit', '512M');
+        
         $grnItems = WaGrn::where('grn_number', $request->grn)->get();
 
         $order = $grnItems->first()->lpo;
@@ -142,17 +146,27 @@ class CompletedGrnController extends Controller
 
         $settings = getAllSettings();
 
-        $pdf = Pdf::loadView('admin.completedgrn.print', compact(
-            'grnItems',
-            'order',
-            'qr_code',
-            'r_p',
-            'returns',
-            'discount',
-            'settings',
-        ))->set_option("enable_php", true);
+        try {
+            $pdf = Pdf::loadView('admin.completedgrn.print', compact(
+                'grnItems',
+                'order',
+                'qr_code',
+                'r_p',
+                'returns',
+                'discount',
+                'settings',
+            ))->setPaper('a4', 'portrait')
+              ->setOptions([
+                  'isHtml5ParserEnabled' => true,
+                  'isRemoteEnabled' => true,
+                  'defaultFont' => 'sans-serif'
+              ]);
 
-        return $pdf->stream('completed_grn_' . date('Y_m_d_h_i_s') . '.pdf');
+            return $pdf->stream('completed_grn_' . date('Y_m_d_h_i_s') . '.pdf');
+        } catch (\Exception $e) {
+            \Log::error('PDF Generation Error: ' . $e->getMessage());
+            return response()->json(['error' => 'PDF generation failed: ' . $e->getMessage()], 500);
+        }
     }
 
     public function printNote(Request $request)

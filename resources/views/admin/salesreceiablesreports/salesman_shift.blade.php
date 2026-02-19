@@ -154,8 +154,8 @@
                             $isMoreThan20HoursOld = $timestamp->diffInHours(now()) > 19;
                             $currentTime = \Carbon\Carbon::now();
                             $isPast8PM = $currentTime->hour >= 20;
-                            $visitedCustomers = getShiftVisitedCustomers($data->id);
-                            $totalCustomers = getRouteCustomersCount($data->route_id); 
+                            $visitedCustomers = $data->met_customers_with_orders;
+                            $totalCustomers = $data->total_customers; 
                             $tonnagePercentage = ($data->tonnage_target > 0) ? ($data->shift_tonnage / $data->tonnage_target) * 100 : 0;
                             $customerPercentage = ($totalCustomers > 0) ? ($visitedCustomers / $totalCustomers) * 100 : 0;
 

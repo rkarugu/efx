@@ -9,6 +9,7 @@ use App\WalletTran;
 use App\Model\Route;
 use App\Model\UserLog;
 use App\SalesmanShift;
+use App\Model\WaShift;
 use App\DeliverySchedule;
 use App\Model\WaCustomer;
 use App\OffsiteShiftRequest;
@@ -84,10 +85,11 @@ class ShiftController extends Controller
 
     private function openSalesmanShift($user, $route_id = null): JsonResponse
     {
-        $now = Carbon::now()->hour;
-        if ($now > 20) {
-            return $this->jsonify(['message' => "Sorry, you can not open a shift after 6PM. Try again tomorrow."], 422);
-        }
+        // Removed time restriction - allow shift opening at any time
+        // $now = Carbon::now()->hour;
+        // if ($now > 20) {
+        //     return $this->jsonify(['message' => "Sorry, you can not open a shift after 6PM. Try again tomorrow."], 422);
+        // }
 
         $route = Route::find($route_id);
         if (!$route) {
@@ -143,7 +145,7 @@ class ShiftController extends Controller
         if (!$lastShift) {
             $this->openNewShift($user, $route, $routeCustomers);
             DB::commit();
-            return $this->jsonify(['message' => 'Shift opened successfully'], 200);
+            return $this->jsonify(['status' => true, 'message' => 'Shift opened successfully'], 200);
         }
 
         if ($lastShift->status == 'not_started') {
@@ -168,7 +170,7 @@ class ShiftController extends Controller
             ]);
 
             DB::commit();
-            return $this->jsonify(['message' => 'Shift opened successfully'], 200);
+            return $this->jsonify(['status' => true, 'message' => 'Shift opened successfully'], 200);
         }
 
         if ($lastShift->block_orders) {
@@ -181,7 +183,7 @@ class ShiftController extends Controller
 
             $this->openNewShift($user, $route, $routeCustomers);
             DB::commit();
-            return $this->jsonify(['message' => 'New shift opened successfully'], 200);
+            return $this->jsonify(['status' => true, 'message' => 'New shift opened successfully'], 200);
         }
 
         $lastShift->update([
@@ -198,7 +200,7 @@ class ShiftController extends Controller
         ]);
 
         DB::commit();
-        return $this->jsonify(['message' => 'Your previous shift has been re-opened successfully.'], 200);
+        return $this->jsonify(['status' => true, 'message' => 'Your previous shift has been re-opened successfully.'], 200);
     }
 
     private function openNewShift($user, $route, $routeCustomers): void
@@ -211,6 +213,15 @@ class ShiftController extends Controller
             'shift_type' => 'onsite',
             'start_time' => Carbon::now(),
         ]);
+
+        // Create corresponding WaShift record for financial data linkage
+        $waShift = new WaShift();
+        $waShift->shift_id = 'SS-' . $shift->id . '-' . date('Ymd');
+        $waShift->salesman_id = $user->id;
+        $waShift->route = $route->route_name;
+        $waShift->status = 'open';
+        $waShift->shift_date = Carbon::now()->toDateString();
+        $waShift->save();
 
         foreach ($routeCustomers as $routeCustomer) {
             $shift->shiftCustomers()->create([
@@ -231,9 +242,30 @@ class ShiftController extends Controller
     private function closeSalesmanShift($request, $user): JsonResponse
     {
         $shift = SalesmanShift::find($request->id);
+        
+        // If not found in salesman_shifts, check wa_shifts
         if (!$shift) {
-            return $this->jsonify(['message' => 'The provided shift id is invalid'], 422);
+            $waShift = WaShift::find($request->id);
+            if (!$waShift) {
+                return $this->jsonify(['message' => 'The provided shift id is invalid'], 422);
+            }
+            
+            // Close the wa_shift
+            $waShift->update(['status' => 'close']);
+            
+            UserLog::create([
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'module' => 'order_taking',
+                'activity' => "Closed shift for {$waShift->route}",
+                'entity_id' => $waShift->id,
+                'user_agent' => 'Bizwiz APP',
+            ]);
+            
+            DB::commit();
+            return $this->jsonify(['message' => 'Shift closed successfully'], 200);
         }
+        
         $route = Route::withCount('waRouteCustomer')->find($shift->route_id);
         if (!in_array($route->id, $user->routes->pluck('id')->toArray())) {
             return $this->jsonify(['status' => false, 'message' => 'The salesman does not belong to this route'], 422);

@@ -459,24 +459,63 @@ class CustomerController extends Controller
 
     public function postCustomerPayment(Request $request, $slug)
     {
+        // Validate required fields
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_type_id' => 'required|integer',
+            'reference' => 'nullable|string|max:255',
+            'narrative' => 'nullable|string|max:500',
+            'paid_by' => 'nullable|string|max:255',
+        ]);
 
         try {
             DB::beginTransaction();
             $customer = WaCustomer::whereSlug($slug)->first();
+            
+            if (!$customer) {
+                throw new \Exception('Customer not found.');
+            }
+            
+            // Check if payment method exists
+            $paymentMethod = PaymentMethod::find($request->payment_type_id);
+            if (!$paymentMethod) {
+                throw new \Exception('Invalid payment method selected.');
+            }
+            
             $accountuingPeriod = WaAccountingPeriod::where('is_current_period', '1')->first();
 
-            $series_module = WaNumerSeriesCode::where('module', 'CHEQUE_REPLACE_BY_CASH')->first();
-            $lastNumberUsed = $series_module->last_number_used;
+            // Try to find number series, first RECEIPT, then CHEQUE_REPLACE_BY_CASH as fallback
+            $series_module = WaNumerSeriesCode::where('module', 'RECEIPT')->first();
+            
+            if (!$series_module) {
+                $series_module = WaNumerSeriesCode::where('module', 'CHEQUE_REPLACE_BY_CASH')->first();
+            }
+            
+            if (!$series_module) {
+                // If no specific module found, try to get any available number series
+                $series_module = WaNumerSeriesCode::first();
+            }
+            
+            if (!$series_module) {
+                throw new \Exception('No number series configuration found. Please contact administrator to set up number series.');
+            }
+            
+            $lastNumberUsed = $series_module->last_number_used ?? 0;
             $newNumber = (int)$lastNumberUsed + 1;
             $series_module->update(['last_number_used' => $newNumber]);
 
             //        $series_module = WaNumerSeriesCode::where('module', 'RECEIPT')->first();
-            $document_no = $series_module->code . '-' . str_pad($newNumber, 5, "0", STR_PAD_LEFT);
+            $code = $series_module->code ?? 'RCP';
+            $document_no = $code . '-' . str_pad($newNumber, 5, "0", STR_PAD_LEFT);
 
 
 
             $user = \App\Model\User::where('route', $customer->route_id)->first();
             $route = Route::find($customer->route_id);
+            
+            if (!$route) {
+                throw new \Exception('Customer route not found. Please contact administrator.');
+            }
 
             $debtorTran = new WaDebtorTran();
             $debtorTran->type_number = $series_module ? $series_module->type_number : '';

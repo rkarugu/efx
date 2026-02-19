@@ -4,7 +4,7 @@ namespace App\Http\Middleware;
 
 use Carbon\Carbon;
 use Closure;
-use Illuminate\Http\Request;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,9 +14,10 @@ class CheckPreviousDayOperationShiftBalanced
     /**
      * Handle an incoming request.
      *
+     * @param  \Illuminate\Http\Request $request
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(HttpRequest $request, Closure $next): Response
     {
 //        $restaurant_id = Auth::user()->restaurant_id;
 //        $date = Carbon::now()->subDay()->toDateString();

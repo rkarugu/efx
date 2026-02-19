@@ -16,10 +16,19 @@
     let total_tendered = 0;
     let allowance = 0;
 
-    var total = $('#total_total').html()
-    if ((parseFloat(total)) === 0 ) {
-        $('#continuePayment').attr('disabled', true);
-    }
+    // Wait for jQuery and DOM to be ready
+    $(document).ready(function() {
+        var total = $('#total_total').html()
+        if ((parseFloat(total)) === 0 ) {
+            $('#continuePayment').attr('disabled', true);
+        }
+        
+        // Attach event handler
+        $('#route_customer').on('change', function() {
+            checkButtonState();
+        });
+    });
+
     function load_customer() {
         $('#loader-on').show();
         url = "{{route('pos.route_customer.create')}}";
@@ -42,10 +51,6 @@
         });
 
     }
-
-    $('#route_customer').on('change', function() {
-        checkButtonState();
-    });
 
     function checkButtonState() {
         var total = $('#total_total').html();
@@ -128,48 +133,46 @@
 
     }
 
+    var form; // Declare form variable at top level
+    
     $(document).ready(function () {
        allowance =  @json($selling_allowance);
         let amount = $('#total_total').text();
         $('#top_total').text(amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
 
-    });
-
-    $(document).on('keypress', ".quantity", function (event) {
-        if (event.keyCode === 13) {
-            event.preventDefault();
-            $(".Newrow").click();
-        }
-    });
-    $(document).on('keypress', ".start_process", function (event) {
-        if (event.keyCode === 13) {
-            event.preventDefault();
-            $(".processIt").click();
-        }
-    });
-
-    function makemefocus() {
-        // console.log($(".makemefocus"),'lll')
-        if ($(".makemefocus")[0]) {
-            add
-            $(".makemefocus")[0].focus();
-        }
-    }
-
-    $(document).on('keypress', '.customer_name_enter', function (event) {
-        if (event.keyCode === 13) {
-            event.preventDefault();
-            makemefocus();
-        }
-    });
-    $(document).on('keypress change', '.send_me_to_next_item', function (event) {
-        if (event.keyCode === 13) {
-            event.preventDefault();
-            makemefocus();
-        }
-    });
-    var form = new Form();
-    $(document).on('click', '.btnUploadData', function (e) {
+        // Initialize form object
+        form = new Form();
+        
+        // Attach all event handlers after DOM is ready
+        $(document).on('keypress', ".quantity", function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                $(".Newrow").click();
+            }
+        });
+        
+        $(document).on('keypress', ".start_process", function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                $(".processIt").click();
+            }
+        });
+        
+        $(document).on('keypress', '.customer_name_enter', function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                makemefocus();
+            }
+        });
+        
+        $(document).on('keypress change', '.send_me_to_next_item', function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                makemefocus();
+            }
+        });
+        
+        $(document).on('click', '.btnUploadData', function (e) {
         e.preventDefault();
         $('#loader-on').show();
         var postData = new FormData();
@@ -196,11 +199,12 @@
                 }
             }
         });
-    });
-    $(document).on('click', '.addExpense', function (e) {
-        e.preventDefault();
+        });
+        
+        $(document).on('click', '.addExpense', function (e) {
+            e.preventDefault();
 
-        var errorDisplayed = false;
+            var errorDisplayed = false;
         var $amountInputs = $('.amount');
         var $referenceInputs = $('.reference');
         $amountInputs.each(function(index) {
@@ -230,7 +234,16 @@
         const request_type = e.target.value;
         processSale(request_type)
 
-    });
+        });
+        
+    }); // End of $(document).ready()
+    
+    function makemefocus() {
+        // console.log($(".makemefocus"),'lll')
+        if ($(".makemefocus")[0]) {
+            $(".makemefocus")[0].focus();
+        }
+    }
 
     function processSale(request_type) {
         var $button = $('#process');
@@ -263,6 +276,9 @@
 
                 $(".remove_error").remove();
                 if (out.result == 0) {
+                    // Re-enable button on validation errors
+                    $button.prop('disabled', false).html(originalText);
+                    
                     for (let i in out.errors) {
                         var id = i.split(".");
                         if (id && id[1]) {
@@ -276,18 +292,44 @@
                 }
                 if (out.result === 1) {
                     form.successMessage(out.message);
+                    // Disable all form buttons to prevent duplicate submissions
+                    $('.addExpense').prop('disabled', true);
+                    
                     if (out.location) {
-                        console.log('Print URL:', out.location);
-                        var printWindow = window.open(out.location, 'PrintWindow', 'width=900,height=650');
-                        printWindow.focus();
-                        printWindow.onload = function() {
-                            printWindow.print();
-                            printWindow.onafterprint = function() {
-                                printWindow.close();
-                                location.href = '{{ route($model.'.index') }}';
-                            };
-                        };
-                        return;
+                        // Only auto-print for "send_request" (process), not for "save"
+                        if (out.requestty === 'send_request') {
+                            console.log('Print URL:', out.location);
+                            console.log('Request type:', out.requestty);
+                            
+                            // Close any open modals first
+                            $('.modal').modal('hide');
+                            $('body').removeClass('modal-open');
+                            $('.modal-backdrop').remove();
+                            
+                            // Open receipt in new window - the print page will handle auto-print
+                            var printWindow = window.open(out.location, 'PrintWindow', 'width=900,height=650,scrollbars=yes');
+                            
+                            if (printWindow) {
+                                console.log('Print window opened successfully');
+                                printWindow.focus();
+                                // The print page will handle auto-printing and closing
+                                
+                                // Redirect main window to POS index after a short delay
+                                setTimeout(function() {
+                                    location.href = '{{ route($model.'.index') }}';
+                                }, 1000);
+                            } else {
+                                console.error('Failed to open print window - popup may be blocked');
+                                alert('Please allow popups for this site to print receipts. Redirecting to receipt page...');
+                                // Fallback: open in same window
+                                window.location.href = out.location;
+                            }
+                            return;
+                        } else {
+                            // For "save" action, redirect immediately without delay
+                            location.href = out.location;
+                            return;
+                        }
                     }
                     sales_id = out.sales_id
                     connectToPusher()
@@ -297,9 +339,13 @@
                     $('#loadingModal').modal('show')
                 }
                 if (out.result === -1) {
+                    // Re-enable button on server errors
+                    $button.prop('disabled', false).html(originalText);
                     form.errorMessage(out.message);
                 }
                 if (out.result === -2) {
+                    // Re-enable button on payment errors
+                    $button.prop('disabled', false).html(originalText);
                     form.errorMessage(out.message);
                 }
                 if (out.result === 2) {
@@ -317,10 +363,9 @@
             error: function (err) {
                 $('#loader-on').hide();
                 $(".remove_error").remove();
-                form.errorMessage('Something went wrong');
-            },
-            complete: function() {
+                // Re-enable button on AJAX errors
                 $button.prop('disabled', false).html(originalText);
+                form.errorMessage('Something went wrong');
             }
         });
     }
@@ -887,6 +932,8 @@
         format: 'yyyy-mm-dd'
     });
     var valueTest = null;
+    var searchTimeout = null; // Debounce timer
+    
     $(document).on('keyup keypress click', '.testIn', function (e) {
         var vale = $(this).val();
         $(this).parent().find(".textData").show();
@@ -950,20 +997,29 @@
             var $this = $(this);
 
             if (vale.length >= 3) {
-                $.ajax({
-                    type: "GET",
-                    url: "{{route('pos-cash-sales.search-inventory')}}",
-                    data: {
-                        'search': vale,
-                        'store_location_id': {{ getLoggeduserProfile()->wa_location_and_store_id }},
+                // Clear previous timeout to implement debouncing
+                clearTimeout(searchTimeout);
+                
+                // Set new timeout - only execute after 300ms of no typing
+                searchTimeout = setTimeout(function() {
+                    $.ajax({
+                        type: "GET",
+                        url: "{{route('pos-cash-sales.search-inventory')}}",
+                        data: {
+                            'search': vale,
+                            'store_location_id': {{ getLoggeduserProfile()->wa_location_and_store_id }},
 
-                    },
-                    success: function (response) {
-                        $this.parent().find('.textData').html(response.view);
-                        console.log(response.results)
-                    }
-                });
-                valueTest = vale;
+                        },
+                        success: function (response) {
+                            $this.parent().find('.textData').html(response.view);
+                            console.log(response.results)
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('Search error:', error);
+                        }
+                    });
+                    valueTest = vale;
+                }, 300); // 300ms debounce delay
             }
 
             return true;
@@ -1004,7 +1060,8 @@
             type: "GET",
             url: "{{ route('pos-cash-sales.getInventryItemDetails') }}",
             data: {
-                'id': $this.data('id')
+                'id': $this.data('id'),
+                'route_customer': ($('#route_customer').val() || $('.route_customer').val() || null)
             },
             success: function (data) {
                 var taxOption = data.tax ? `<option value="${data.tax.id}" selected>${data.tax.title}</option>` : '';
@@ -1304,26 +1361,38 @@
         $(".route_customer").select2(
             {
                 placeholder: 'Select Customer',
+                minimumInputLength: 0, // Show customers immediately on dropdown open
                 ajax: {
                     url: '{{route("pos.route_customer.dropdown")}}',
                     dataType: 'json',
                     type: "GET",
-                    delay: 250,
+                    delay: 250, // Reduced delay for better responsiveness
+                    cache: true, // Enable caching of results
                     data: function (params) {
                         return {
-                            q: params.term
+                            q: params.term || '', // Send empty string if no search term
+                            page: params.page || 1
                         };
                     },
-                    processResults: function (data) {
-                        var res = data.map(function (item) {
+                    processResults: function (data, params) {
+                        params.page = params.page || 1;
+                        
+                        // Handle both old format (array) and new format (object with results)
+                        var items = data.results || data;
+                        
+                        var res = items.map(function (item) {
                             return {
                                 id: item.id,
                                 text: item.title,
                                 phone: item.phone
                             };
                         });
+                        
                         return {
-                            results: res
+                            results: res,
+                            pagination: {
+                                more: (params.page * 30) < (data.total_count || 0)
+                            }
                         };
                     }
                 },

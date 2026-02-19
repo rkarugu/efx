@@ -58,7 +58,7 @@ class TradeDiscount extends Model
         return $this->status == self::PENDING;
     }
 
-    public function isAppoved()
+    public function isApproved()
     {
         return $this->status == self::APPROVED;
     }

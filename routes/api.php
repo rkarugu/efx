@@ -1,7 +1,7 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Authorization, Content-Type");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 
 
 use App\Http\Controllers\Admin\AlertController;
@@ -48,6 +48,7 @@ use App\Http\Controllers\Admin\VehicleModelController;
 use App\Http\Controllers\Admin\VehicleTelematicsDataController;
 use App\Http\Controllers\Admin\VehicleTypeController;
 use App\Http\Controllers\Admin\VendorCentreController;
+use App\Http\Controllers\Api\DeliveryDriverApiController;
 use App\Http\Controllers\Api\RoutesApiController;
 use App\Http\Controllers\Api\SalesController;
 use App\Http\Controllers\Api\UserController;
@@ -767,7 +768,38 @@ Route::group(['prefix' => 'supplier-incentives','middleware' => ['jwt.auth']], f
     Route::post('/salesman-earning/process', [\App\Http\Controllers\Api\SupplierIncentivesController::class, 'process']);
 });
 
+// Delivery Driver API Routes
+Route::group(['prefix' => 'delivery-driver', 'middleware' => ['web', 'delivery-driver-api']], function () {
+    Route::get('/dashboard', [DeliveryDriverApiController::class, 'getDashboardData']);
+    Route::post('/start-delivery', [DeliveryDriverApiController::class, 'startDelivery']);
+    Route::post('/prompt-delivery', [DeliveryDriverApiController::class, 'promptDelivery']);
+    Route::post('/verify-code', [DeliveryDriverApiController::class, 'verifyCode']);
+    Route::post('/complete-schedule', [DeliveryDriverApiController::class, 'completeSchedule']);
+    Route::get('/history', [DeliveryDriverApiController::class, 'getHistory']);
+    Route::post('/update-location', [DeliveryDriverApiController::class, 'updateLocation']);
+});
+
+// Delivery Shifts for Salesman (accessible with jwt.auth)
+Route::group(['middleware' => ['jwt.auth']], function () {
+    Route::get('/getDeliveryShifts', [DeliveryDriverApiController::class, 'getDeliveryShifts']);
+});
+
 
 // HR
 require_once('api_includes/hr.php');
 
+// Diagnostic endpoint for shift debugging
+Route::get('/debug/shifts', function() {
+    $waShifts = DB::table('wa_shifts')->orderBy('created_at', 'desc')->limit(5)->get();
+    $salesmanShifts = DB::table('salesman_shifts')->orderBy('created_at', 'desc')->limit(5)->get();
+    $orders = DB::table('wa_internal_requisitions')->orderBy('created_at', 'desc')->limit(5)->get();
+    $todayShifts = DB::table('wa_shifts')->whereDate('created_at', '2025-11-10')->get();
+    
+    return response()->json([
+        'wa_shifts' => $waShifts,
+        'salesman_shifts' => $salesmanShifts,
+        'recent_orders' => $orders,
+        'today_shifts' => $todayShifts,
+        'today_count' => $todayShifts->count(),
+    ]);
+});

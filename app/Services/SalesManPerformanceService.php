@@ -279,7 +279,7 @@ class SalesManPerformanceService
                         'earned'=> $this->calculateIncentive($unmet_percentage, $combinedIncentives['met_customers'])
                     ],
                     'onsite' => [
-                        "title" => "On Site Shifts",
+                        "title" => "Onsite Shifts",
                         "current_total_shifts" => $datum->actual_frequency,
                         "total" => $datum->actual_frequency,
                         "group"=> $setIncentives->firstWhere('slug', 'onsite')->group,

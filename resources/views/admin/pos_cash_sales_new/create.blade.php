@@ -642,7 +642,8 @@ $(document).on('click','.addExpense',function(e){
           type: "GET",
           url: "{{route('pos-cash-sales.getInventryItemDetails')}}",
           data: {
-            'id':$this.data('id')
+            'id':$this.data('id'),
+            'route_customer': ($('#route_customer').val() || $('.route_customer').val() || null)
           },
           success: function (response) {
             $(".vat_list").select2('destroy');

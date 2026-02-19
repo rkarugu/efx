@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search Test</title>
+    <script>
+        function testSearchRoute() {
+            console.log('Testing search route...');
+            
+            fetch('http://127.0.0.1:8000/admin/salesman-orders/test-search', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Test response:', data);
+                document.getElementById('result').innerHTML = 'Test successful: ' + JSON.stringify(data);
+            })
+            .catch(error => {
+                console.error('Test failed:', error);
+                document.getElementById('result').innerHTML = 'Test failed: ' + error.message;
+            });
+        }
+        
+        function testSearchInventory() {
+            console.log('Testing search inventory...');
+            
+            fetch('http://127.0.0.1:8000/admin/salesman-orders/search-inventory?search=test&store_location_id=1', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Search response:', data);
+                document.getElementById('searchResult').innerHTML = 'Search successful: ' + JSON.stringify(data);
+            })
+            .catch(error => {
+                console.error('Search failed:', error);
+                document.getElementById('searchResult').innerHTML = 'Search failed: ' + error.message;
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>Search Functionality Test</h1>
+    
+    <button onclick="testSearchRoute()">Test Search Route</button>
+    <div id="result"></div>
+    
+    <br><br>
+    
+    <button onclick="testSearchInventory()">Test Search Inventory</button>
+    <div id="searchResult"></div>
+    
+    <br><br>
+    
+    <p>Open browser console (F12) to see detailed logs.</p>
+</body>
+</html>

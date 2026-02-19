@@ -179,6 +179,11 @@ class SalesInvoiceReturnController extends Controller
 
             foreach ($returns as $return) {
                 $route = Route::find($return->route_id);
+                
+                if (!$route) {
+                    continue; // Skip if route not found
+                }
+                
                 $totalSalesInclusive = $return->total_cost_with_vat;
                 $vatAmount = $return->vat;
                 $totalSalesExclusive = $totalSalesInclusive - $vatAmount;
@@ -187,8 +192,19 @@ class SalesInvoiceReturnController extends Controller
                 $series_module = WaNumerSeriesCode::where('module', 'RETURN')->first();
 
                 $documentNo = $return->return_number;
+                $routeName = $route->route_name ?? 'Unknown Route';
+                
+                // Get customer for this route
+                $customer = WaCustomer::where('route_id', $route->id)->first();
+                if (!$customer) {
+                    continue; // Skip if customer not found
+                }
 
                 $salesAccount = DB::table('wa_charts_of_accounts')->select('id', 'account_code')->where('account_code', '56002-003')->first();
+                if (!$salesAccount) {
+                    continue; // Skip if sales account not found
+                }
+                
                 $salesCredit = new WaGlTran();
                 $salesCredit->period_number = $accountingPeriod ? $accountingPeriod->period_no : null;
                 $salesCredit->grn_type_number = $series_module?->type_number ?? 109;
@@ -198,14 +214,21 @@ class SalesInvoiceReturnController extends Controller
                 $salesCredit->grn_last_used_number = $series_module?->last_number_used;
                 $salesCredit->transaction_type = $series_module?->description ?? 'Return';
                 $salesCredit->transaction_no = $documentNo;
-                $salesCredit->narrative = "{$route->route_name} - $documentNo - Returns Exc";
+                $salesCredit->narrative = "{$routeName} - $documentNo - Returns Exc";
                 $salesCredit->account = $salesAccount->account_code;
                 $salesCredit->amount = $totalSalesExclusive;
-                $salesCredit->customer_id = WaCustomer::where('route_id', $route->id)->first()->id;
+                $salesCredit->customer_id = $customer->id;
                 $salesCredit->save();
 
                 $taxManager = TaxManager::find(1);
+                if (!$taxManager) {
+                    continue; // Skip if tax manager not found
+                }
+                
                 $vatControlAccount = DB::table('wa_charts_of_accounts')->select('id', 'account_code')->where('id', $taxManager->output_tax_gl_account)->first();
+                if (!$vatControlAccount) {
+                    continue; // Skip if VAT control account not found
+                }
                 $vatCredit = new WaGlTran();
                 $vatCredit->period_number = $accountingPeriod ? $accountingPeriod->period_no : null;
                 $vatCredit->grn_type_number = $series_module?->type_number ?? 109;
@@ -215,14 +238,21 @@ class SalesInvoiceReturnController extends Controller
                 $vatCredit->grn_last_used_number = $series_module?->last_number_used;
                 $vatCredit->transaction_type = $series_module?->description ?? 'Return';
                 $vatCredit->transaction_no = $documentNo;
-                $vatCredit->narrative = "$route->route_name - {$documentNo} - VAT Return";
+                $vatCredit->narrative = "{$routeName} - {$documentNo} - VAT Return";
                 $vatCredit->account = $vatControlAccount->account_code;
                 $vatCredit->amount = $vatAmount;
-                $vatCredit->customer_id = WaCustomer::where('route_id', $route->id)->first()->id;
+                $vatCredit->customer_id = $customer->id;
                 $vatCredit->save();
 
                 $companyPreferences = WaCompanyPreference::find(1);
+                if (!$companyPreferences) {
+                    continue; // Skip if company preferences not found
+                }
+                
                 $debtorsControlAccount = DB::table('wa_charts_of_accounts')->select('id', 'account_code')->where('id', $companyPreferences->debtors_control_gl_account)->first();
+                if (!$debtorsControlAccount) {
+                    continue; // Skip if debtors control account not found
+                }
                 $debtorsDebit = new WaGlTran();
                 $debtorsDebit->period_number = $accountingPeriod ? $accountingPeriod->period_no : null;
                 $debtorsDebit->grn_type_number = $series_module?->type_number ?? 109;
@@ -232,10 +262,10 @@ class SalesInvoiceReturnController extends Controller
                 $debtorsDebit->grn_last_used_number = $series_module?->last_number_used;
                 $debtorsDebit->transaction_type = $series_module?->description ?? 'Return';
                 $debtorsDebit->transaction_no = $documentNo;
-                $debtorsDebit->narrative = "$route->route_name - {$documentNo} - Debtors Return";
+                $debtorsDebit->narrative = "{$routeName} - {$documentNo} - Debtors Return";
                 $debtorsDebit->account = $debtorsControlAccount->account_code;
                 $debtorsDebit->amount = $totalSalesInclusive * -1;
-                $debtorsDebit->customer_id = WaCustomer::where('route_id', $route->id)->first()->id;
+                $debtorsDebit->customer_id = $customer->id;
                 $debtorsDebit->save();
             }
         } catch (\Throwable $e) {

@@ -145,83 +145,113 @@ class StockTakesController extends Controller
         $stock_check_row_created = 0;
         $unit = WaUnitOfMeasure::with('get_uom_location')->where('id', $request->wa_unit_of_measure_id)->first();
 
-        // dd(WaLocationStoreUom::where('uom_id', $unit->id)->first()->location_id);
+        // Wrap in transaction for data integrity
+        DB::beginTransaction();
+        try {
+            foreach ($wa_inventory_category_ids as $category_id) {
+                $items = WaInventoryItem::where('wa_inventory_location_uom.uom_id', $request->wa_unit_of_measure_id)
+                    ->where('wa_location_and_stores.id', $request->wa_location_and_store_id)
+                    ->where('wa_inventory_items.wa_inventory_category_id', $category_id)
+                    ->where('wa_inventory_items.status', 1)
+                    ->join('wa_inventory_location_uom', function ($e) {
+                        $e->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id');
+                    })
+                    ->leftJoin('wa_location_and_stores', function ($e) {
+                        $e->on('wa_inventory_location_uom.location_id', '=', 'wa_location_and_stores.id');
+                    })
+                    ->groupBy('wa_inventory_items.id')
+                    ->select('wa_inventory_items.*')
+                    ->get();
 
-        foreach ($wa_inventory_category_ids as $category_id) {
-            $items = WaInventoryItem::where('wa_inventory_location_uom.uom_id', $request->wa_unit_of_measure_id)
-                ->where('wa_location_and_stores.id', $request->wa_location_and_store_id)
-                ->where('wa_inventory_items.wa_inventory_category_id', $category_id)
-                ->where('wa_inventory_items.status', 1)
-                ->join('wa_inventory_location_uom', function ($e) {
-                    $e->on('wa_inventory_items.id', '=', 'wa_inventory_location_uom.inventory_id');
-                })
-                ->leftJoin('wa_location_and_stores', function ($e) {
-                    $e->on('wa_inventory_location_uom.location_id', '=', 'wa_location_and_stores.id');
-                })
-                ->groupBy('wa_inventory_items.id')
-                ->select('wa_inventory_items.*')
-                ->get();
-            $exits_row = WaStockCheckFreezeItem::where([['wa_unit_of_measure', @$unit->title], ['wa_location_and_store_id', $request->wa_location_and_store_id], ['item_category_id', $category_id]])->first();
-            if ($exits_row) {
-                foreach ($items as $key => $item_row) {
-                    $available_quantity = getItemAvailableQuantity($item_row->stock_id_code, $request->wa_location_and_store_id);
-                    if (!empty($request->quantities_zero) && empty($available_quantity)) {
-                        continue;
-                    }
+                // PERFORMANCE OPTIMIZATION: Batch fetch all quantities at once
+                $stock_id_codes = $items->pluck('stock_id_code')->toArray();
+                $available_quantities = getItemsAvailableQuantities($stock_id_codes, $request->wa_location_and_store_id);
+
+                $exits_row = WaStockCheckFreezeItem::where([['wa_unit_of_measure', @$unit->id], ['wa_location_and_store_id', $request->wa_location_and_store_id], ['item_category_id', $category_id]])->first();
+                
+                if ($exits_row) {
+                    // Update existing freeze
                     $stock_check_id = $exits_row->wa_stock_check_freeze_id;
-                    $entity = WaStockCheckFreezeItem::firstOrNew(
-                        [
-                            'wa_inventory_item_id' => $item_row->id,
-                            'wa_stock_check_freeze_id' => $stock_check_id,
-                            'wa_location_and_store_id' => $request->wa_location_and_store_id,
-                            'item_category_id' => $category_id,
-                            'wa_unit_of_measure' => @$unit->id,
-                        ]
-                    );
+                    foreach ($items as $key => $item_row) {
+                        $available_quantity = $available_quantities[$item_row->stock_id_code] ?? 0;
+                        if (!empty($request->quantities_zero) && empty($available_quantity)) {
+                            continue;
+                        }
+                        
+                        $entity = WaStockCheckFreezeItem::firstOrNew(
+                            [
+                                'wa_inventory_item_id' => $item_row->id,
+                                'wa_stock_check_freeze_id' => $stock_check_id,
+                                'wa_location_and_store_id' => $request->wa_location_and_store_id,
+                                'item_category_id' => $category_id,
+                                'wa_unit_of_measure' => @$unit->id,
+                            ]
+                        );
 
-                    $entity->quantity_on_hand = $available_quantity;
-                    $entity->save();
-                }
-            } else {
-                //     echo "second"; die;
-                if ($stock_check_row_created == 0) {
-                    $entity_stock_check = new WaStockCheckFreeze();
-                    $entity_stock_check->wa_location_and_store_id = $request->wa_location_and_store_id;
-                    $entity_stock_check->user_id = $logged_user_profile->id;
-                    $entity_stock_check->wa_unit_of_measure_id = $request->wa_unit_of_measure_id;
-                    $entity_stock_check->wa_inventory_category_ids = serialize($wa_inventory_category_ids);
-                    $entity_stock_check->save();
-                    $stock_check_row_created = 1;
-                }
-                foreach ($items as $key => $item_row) {
-                    $available_quantity = getItemAvailableQuantity($item_row->stock_id_code, $request->wa_location_and_store_id);
-                    if (!empty($request->quantities_zero) && empty($available_quantity)) {
-                        continue;
+                        $entity->quantity_on_hand = $available_quantity;
+                        $entity->save();
                     }
-                    $entity = new WaStockCheckFreezeItem();
-
-                    $entity->wa_stock_check_freeze_id = $entity_stock_check->id;
-                    $entity->wa_inventory_item_id = $item_row->id;
-                    $entity->wa_location_and_store_id = $request->wa_location_and_store_id;
-                    $entity->item_category_id = $category_id;
-                    $entity->quantity_on_hand = $available_quantity;
-                    $entity->wa_unit_of_measure = @$unit->id;
-                    $entity->save();
+                } else {
+                    // Create new freeze
+                    if ($stock_check_row_created == 0) {
+                        $entity_stock_check = new WaStockCheckFreeze();
+                        $entity_stock_check->wa_location_and_store_id = $request->wa_location_and_store_id;
+                        $entity_stock_check->user_id = $logged_user_profile->id;
+                        $entity_stock_check->wa_unit_of_measure_id = $request->wa_unit_of_measure_id;
+                        $entity_stock_check->wa_inventory_category_ids = serialize($wa_inventory_category_ids);
+                        $entity_stock_check->save();
+                        $stock_check_row_created = 1;
+                    }
+                    
+                    foreach ($items as $key => $item_row) {
+                        $available_quantity = $available_quantities[$item_row->stock_id_code] ?? 0;
+                        if (!empty($request->quantities_zero) && empty($available_quantity)) {
+                            continue;
+                        }
+                        
+                        $entity = new WaStockCheckFreezeItem();
+                        $entity->wa_stock_check_freeze_id = $entity_stock_check->id;
+                        $entity->wa_inventory_item_id = $item_row->id;
+                        $entity->wa_location_and_store_id = $request->wa_location_and_store_id;
+                        $entity->item_category_id = $category_id;
+                        $entity->quantity_on_hand = $available_quantity;
+                        $entity->wa_unit_of_measure = @$unit->id;
+                        $entity->save();
+                    }
                 }
             }
+            
+            DB::commit();
+            Session::flash('success', 'Processed successfully.');
+            return redirect()->back();
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Stock take freeze creation failed: ' . $e->getMessage());
+            Session::flash('error', 'Failed to create stock take: ' . $e->getMessage());
+            return redirect()->back();
         }
-        Session::flash('success', 'Processed successfully.');
-        return redirect()->back();
     }
 
     public function printToPdf($id)
     {
+        // Increase limits for large datasets
+        set_time_limit(300); // 5 minutes
+        ini_set("memory_limit", "512M");
+        ini_set('max_execution_time', 300);
 
         $categories = WaInventoryCategory::all();
         $freeze = WaStockCheckFreeze::find($id);
+        
+        if (!$freeze) {
+            Session::flash('error', 'Stock take freeze not found');
+            return redirect()->back();
+        }
+
         $user = Auth::user();
         if (isset($user->role_id) && $user->role_id == 152) {
-            $bins = WaUnitOfMeasure::where('wa_unit_of_measures.id', $user->wa_unit_of_measures_id)->where('wa_location_store_uom.location_id', $freeze->wa_location_and_store_id)
+            $bins = WaUnitOfMeasure::where('wa_unit_of_measures.id', $user->wa_unit_of_measures_id)
+                ->where('wa_location_store_uom.location_id', $freeze->wa_location_and_store_id)
                 ->leftJoin('wa_location_store_uom', function ($e) {
                     $e->on('wa_location_store_uom.uom_id', '=', 'wa_unit_of_measures.id');
                 })->get();
@@ -232,29 +262,51 @@ class StockTakesController extends Controller
                 })->get();
         }
 
-        // $freezeItems = WaStockCheckFreezeItem::where('wa_stock_check_freeze_id', $freeze->id)->get();
+        // Optimize query - only select needed columns
         $freezeItems = DB::table('wa_stock_check_freeze_items')
             ->leftJoin('wa_inventory_items', 'wa_inventory_items.id', '=', 'wa_stock_check_freeze_items.wa_inventory_item_id')
-            ->select('wa_stock_check_freeze_items.*', 'wa_inventory_items.stock_id_code', 'wa_inventory_items.title')
+            ->select(
+                'wa_stock_check_freeze_items.id',
+                'wa_stock_check_freeze_items.quantity_on_hand',
+                'wa_stock_check_freeze_items.wa_unit_of_measure',
+                'wa_stock_check_freeze_items.item_category_id',
+                'wa_inventory_items.stock_id_code',
+                'wa_inventory_items.title'
+            )
             ->where('wa_stock_check_freeze_items.wa_location_and_store_id', '=', $freeze->wa_location_and_store_id)
             ->where('wa_inventory_items.status', 1)
             ->orderBy('wa_inventory_items.title', 'asc')
             ->get();
 
-        $data = [];
-        foreach ($freezeItems as $key => $item) {
-            $payload = [];
-            $payload['stock_id_code'] = $item->stock_id_code;
-            $payload['title'] = $item->title;
-            $payload['quantity at hand'] = $item->quantity_on_hand;
-            $data[] = $payload;
-        }
-        set_time_limit(0);
-        ini_set("memory_limit", -1);
-        ini_set('max_execution_time', 0);
+        \Log::info("Generating PDF for freeze ID {$id} with {$freezeItems->count()} items");
 
-        $pdf = Pdf::loadView('admin.stock_takes.print', compact('categories', 'freeze', 'freezeItems', 'bins'));
-        return $pdf->download('stock_check' . date('Y_m_d_h_i_s') . '.pdf');
+        // PERFORMANCE OPTIMIZATION: Pre-group items by bin and category to avoid nested loops in view
+        $itemsByBinAndCategory = [];
+        foreach ($freezeItems as $item) {
+            $binId = $item->wa_unit_of_measure ?? 0;
+            $categoryId = $item->item_category_id ?? 0;
+            
+            if (!isset($itemsByBinAndCategory[$binId])) {
+                $itemsByBinAndCategory[$binId] = [];
+            }
+            if (!isset($itemsByBinAndCategory[$binId][$categoryId])) {
+                $itemsByBinAndCategory[$binId][$categoryId] = [];
+            }
+            
+            $itemsByBinAndCategory[$binId][$categoryId][] = $item;
+        }
+
+        try {
+            $pdf = Pdf::loadView('admin.stock_takes.print', compact('categories', 'freeze', 'freezeItems', 'bins', 'itemsByBinAndCategory'));
+            $pdf->setPaper('a4', 'portrait');
+            $pdf->setOption('enable-local-file-access', true);
+            
+            return $pdf->download('stock_check_' . date('Y_m_d_H_i_s') . '.pdf');
+        } catch (\Exception $e) {
+            \Log::error('PDF generation failed: ' . $e->getMessage());
+            Session::flash('error', 'Failed to generate PDF: ' . $e->getMessage());
+            return redirect()->back();
+        }
     }
 
     public function printPage(Request $request)

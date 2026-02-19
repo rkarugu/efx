@@ -409,14 +409,26 @@
                 },
 
                 fetchAvailableDrivers() {
+                    console.log('Fetching available drivers for branch:', this.currentUser.restaurant_id);
                     axios.get('/api/vehicles/available-drivers', {
                         params: {
                             branch_id: this.currentUser.restaurant_id
                         }
                     }).then(res => {
+                        console.log('Available drivers response:', res.data);
                         this.availableDrivers = res.data.data
+                        console.log('Available drivers set to:', this.availableDrivers);
+                        console.log('Number of available drivers:', this.availableDrivers.length);
+                        // Initialize Select2 after data is loaded and modal is shown
+                        this.$nextTick(() => {
+                            // Wait for modal to be fully shown before initializing Select2
+                            setTimeout(() => {
+                                this.initializeSelect2();
+                            }, 300);
+                        });
                     }).catch(err => {
-
+                        console.error('Error fetching available drivers:', err);
+                        toastr.error('Failed to load available drivers');
                     })
                 },
 
@@ -427,6 +439,10 @@
                         }
                     }).then(res => {
                         this.availableTurnboys = res.data.data
+                        // Initialize Select2 after data is loaded
+                        this.$nextTick(() => {
+                            this.initializeTurnboySelect2();
+                        });
                     }).catch(err => {
 
                     })
@@ -607,6 +623,51 @@
                         }, 100)
                     }).catch(() => {
                     })
+                },
+
+                // Select2 initialization methods
+                initializeSelect2() {
+                    console.log('Initializing Select2 for driver dropdown');
+                    const $driverSelect = $('#driver_id');
+                    
+                    if ($driverSelect.length === 0) {
+                        console.error('Driver select element not found');
+                        return;
+                    }
+                    
+                    // Safely destroy existing Select2 instance if it exists
+                    if ($driverSelect.hasClass('select2-hidden-accessible')) {
+                        console.log('Destroying existing Select2 instance');
+                        $driverSelect.select2('destroy');
+                    }
+                    
+                    // Initialize Select2
+                    console.log('Creating new Select2 instance');
+                    $driverSelect.select2({
+                        placeholder: 'Select driver',
+                        allowClear: true,
+                        dropdownParent: $('#driver-assignment-modal')
+                    }).on('change', (e) => {
+                        console.log('Driver selected:', e.target.value);
+                        this.selectedDriverId = e.target.value;
+                    });
+                    
+                    console.log('Select2 initialized successfully');
+                },
+
+                initializeTurnboySelect2() {
+                    // Safely destroy existing Select2 instance if it exists
+                    if ($('#turnboy_id').hasClass('select2-hidden-accessible')) {
+                        $('#turnboy_id').select2('destroy');
+                    }
+                    
+                    // Initialize Select2
+                    $('#turnboy_id').select2({
+                        placeholder: 'Select turn boy',
+                        allowClear: true
+                    }).on('change', (e) => {
+                        this.selectedTurnboyId = e.target.value;
+                    });
                 },
             },
         })

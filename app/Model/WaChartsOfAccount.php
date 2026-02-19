@@ -20,7 +20,7 @@ class WaChartsOfAccount extends Model
             'onUpdate' => false
         ]];
     }
-    // protected $appends = ['amount','this_month_amount','this_year_amount','previous_year_amount','two_year_back_amount'];
+    protected $appends = ['amount','this_month_amount','this_year_amount','previous_year_amount','two_year_back_amount'];
 
     public function getRelatedGroup()
     {

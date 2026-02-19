@@ -1,0 +1,55 @@
+{
+  "name": "Delivery Driver App",
+  "short_name": "DeliveryApp",
+  "description": "Professional delivery management application for drivers",
+  "start_url": "/admin/delivery-driver/dashboard",
+  "display": "standalone",
+  "background_color": "#667eea",
+  "theme_color": "#667eea",
+  "orientation": "portrait",
+  "scope": "/admin/delivery-driver/",
+  "icons": [
+    {
+      "src": "/assets/images/delivery-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/delivery-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View delivery dashboard",
+      "url": "/admin/delivery-driver/dashboard",
+      "icons": [
+        {
+          "src": "/assets/images/dashboard-icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "History",
+      "short_name": "History",
+      "description": "View delivery history",
+      "url": "/admin/delivery-driver/history",
+      "icons": [
+        {
+          "src": "/assets/images/history-icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
+}

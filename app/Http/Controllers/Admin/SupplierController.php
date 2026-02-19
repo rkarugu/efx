@@ -1318,41 +1318,78 @@ class SupplierController extends Controller
         $to = $request->filled('to') ? $request->to . ' 23:59:59' : now()->format('Y-m-d 23:59:59');
         $code = $request->supplier_code;
 
-        $items = WaSuppTran::query()
-            ->select('*')
-            ->selectRaw("CONCAT_WS('/', suppreference, description) as description")
-            ->selectRaw("(CASE WHEN total_amount_inc_vat > 0 THEN total_amount_inc_vat ELSE 0 END) as debit")
-            ->selectRaw("(CASE WHEN total_amount_inc_vat < 0 THEN total_amount_inc_vat ELSE 0 END) as credit")
-            ->selectRaw("(SELECT SUM(prev.total_amount_inc_vat) FROM wa_supp_trans as prev where supplier_no = '$code' AND prev.id  < wa_supp_trans.id) AS opening_balance")
-            ->where('supplier_no', $code)
-            ->whereBetween('created_at', [$from, $to])
-            ->get();
+        // If no supplier code provided, show selection form
+        if (!$code) {
+            $suppliers = WaSupplier::select('id', 'supplier_code', 'name')->orderBy('name')->get();
+            return view('admin.maintainsuppliers.supplier_statement_form', [
+                'title' => 'Supplier Statement',
+                'model' => $this->model,
+                'breadcum' => ['Suppliers' => route('maintain-suppliers.index'), 'Supplier Statement' => ''],
+                'suppliers' => $suppliers,
+                'from' => now()->subDays(30)->format('Y-m-d'),
+                'to' => now()->format('Y-m-d')
+            ]);
+        }
 
-        $items->map(function ($item) {
-            $pos = strrpos($item->document_no, '-');
-            $prefix = substr($item->document_no, 0, $pos);
-            $module = WaNumerSeriesCode::where('code', $prefix)->first();
-
-            $invoice = WaSupplierInvoice::where('supplier_invoice_number', $item->suppreference)->first();
-            if (!is_null($invoice)) {
-                return $item->memo = 'INVOICE';
-            }
-
-            if (is_null($module)) {
-                return $item->memo = '';
-            }
-
-            if ($prefix == 'FN') {
-                return  $item->memo = FinancialNote::where('note_no', $item->document_no)->first()->type . ' NOTE';
-            }
-
-            $item->memo = strtoupper($module->description);
-        });
-
+        // Get opening balance first
         $openingBalance = WaSuppTran::query()
             ->where('supplier_no', $code)
             ->where('created_at', '<', $from)
             ->sum('total_amount_inc_vat');
+
+        // Optimize query - remove slow correlated subquery
+        $items = WaSuppTran::query()
+            ->select(
+                'id',
+                'document_no',
+                'trans_date',
+                'suppreference',
+                'description',
+                'total_amount_inc_vat',
+                'created_at'
+            )
+            ->selectRaw("CONCAT_WS('/', suppreference, description) as full_description")
+            ->selectRaw("(CASE WHEN total_amount_inc_vat > 0 THEN total_amount_inc_vat ELSE 0 END) as debit")
+            ->selectRaw("(CASE WHEN total_amount_inc_vat < 0 THEN ABS(total_amount_inc_vat) ELSE 0 END) as credit")
+            ->where('supplier_no', $code)
+            ->whereBetween('created_at', [$from, $to])
+            ->orderBy('id', 'asc')
+            ->get();
+
+        // Calculate running balance and memo in PHP (faster than N+1 queries)
+        $runningBalance = $openingBalance;
+        
+        // Pre-load all related data to avoid N+1 queries
+        $documentPrefixes = $items->pluck('document_no')->map(function($doc) {
+            $pos = strrpos($doc, '-');
+            return $pos !== false ? substr($doc, 0, $pos) : '';
+        })->unique()->filter()->values();
+        
+        $modules = WaNumerSeriesCode::whereIn('code', $documentPrefixes)->get()->keyBy('code');
+        $invoiceRefs = $items->pluck('suppreference')->filter()->unique()->values();
+        $invoices = WaSupplierInvoice::whereIn('supplier_invoice_number', $invoiceRefs)->pluck('supplier_invoice_number');
+        
+        $items->transform(function ($item) use (&$runningBalance, $modules, $invoices) {
+            // Calculate running balance
+            $item->opening_balance = $runningBalance;
+            $runningBalance += $item->total_amount_inc_vat;
+            
+            // Determine memo
+            $pos = strrpos($item->document_no, '-');
+            $prefix = $pos !== false ? substr($item->document_no, 0, $pos) : '';
+            
+            if ($invoices->contains($item->suppreference)) {
+                $item->memo = 'INVOICE';
+            } elseif ($prefix == 'FN') {
+                $item->memo = 'FINANCIAL NOTE';
+            } elseif (isset($modules[$prefix])) {
+                $item->memo = strtoupper($modules[$prefix]->description);
+            } else {
+                $item->memo = '';
+            }
+            
+            return $item;
+        });
 
         $branch = Restaurant::find(10);
         $supplier = WaSupplier::where('supplier_code', $code)->first();
@@ -1361,18 +1398,32 @@ class SupplierController extends Controller
             $supplier->supplier_code . " - " . $supplier->name . " - "
         );
 
-        $pdf = PDF::loadView('admin.maintainsuppliers.supplier_statement_pdf', [
-            'items' => $items,
-            'openingBalance' => $openingBalance,
-            'settings' => getAllSettings(),
-            'supplier' => $supplier,
-            'from' => Carbon::parse($from),
-            'to' => Carbon::parse($to),
-            'branch' => $branch,
-            'qr_code' => $qr_code,
-        ]);
+        // Increase timeout and memory for large PDFs
+        set_time_limit(300); // 5 minutes
+        ini_set('memory_limit', '512M');
 
-        return $pdf->download('supplier_statement_' . time() . '.pdf');
+        try {
+            $pdf = PDF::loadView('admin.maintainsuppliers.supplier_statement_pdf', [
+                'items' => $items,
+                'openingBalance' => $openingBalance,
+                'settings' => getAllSettings(),
+                'supplier' => $supplier,
+                'from' => Carbon::parse($from),
+                'to' => Carbon::parse($to),
+                'branch' => $branch,
+                'qr_code' => $qr_code,
+            ]);
+
+            return $pdf->download('supplier_statement_' . $code . '_' . time() . '.pdf');
+        } catch (\Exception $e) {
+            \Log::error('Supplier Statement PDF Error', [
+                'supplier' => $code,
+                'error' => $e->getMessage(),
+                'items_count' => $items->count()
+            ]);
+            
+            return redirect()->back()->withErrors(['error' => 'Failed to generate PDF. Please try a shorter date range or contact support.']);
+        }
     }
 
 

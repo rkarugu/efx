@@ -63,6 +63,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->belongsToMany(Route::class);
     }
 
+    public function getroute()
+    {
+        return $this->belongsTo('App\Model\Route', 'route');
+    }
+
     public function app_permissions()
     {
         return $this->hasMany(UserAppPermissions::class, 'user_id');

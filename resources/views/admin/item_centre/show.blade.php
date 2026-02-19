@@ -210,11 +210,153 @@
         <div class="loader" id="loader-1"></div>
     </div>
     <script src="{{ asset('assets/admin/bower_components/select2/dist/js/select2.full.min.js') }}"></script>
+    <script>
+        // Immediately patch Select2 after it loads
+        (function() {
+            if (typeof $.fn.select2 !== 'undefined') {
+                var originalSelect2 = $.fn.select2;
+                
+                $.fn.select2 = function(options) {
+                    if (options === 'destroy') {
+                        return this.each(function() {
+                            var $this = $(this);
+                            try {
+                                if ($this.hasClass('select2-hidden-accessible')) {
+                                    originalSelect2.call($this, 'destroy');
+                                }
+                            } catch (e) {
+                                // Silently handle destroy errors
+                            }
+                        });
+                    }
+                    
+                    return this.each(function() {
+                        var $this = $(this);
+                        try {
+                            return originalSelect2.call($this, options);
+                        } catch (e) {
+                            console.warn('Select2 operation failed:', e);
+                            return $this;
+                        }
+                    });
+                };
+                
+                // Copy over any static methods/properties
+                for (var prop in originalSelect2) {
+                    if (originalSelect2.hasOwnProperty(prop)) {
+                        $.fn.select2[prop] = originalSelect2[prop];
+                    }
+                }
+            }
+
+            // Global error handler for uncaught JavaScript errors
+            window.addEventListener('error', function(e) {
+                if (e.message && e.message.includes('select2') && 
+                    (e.message.includes('destroy') || e.message.includes('not using Select2'))) {
+                    e.preventDefault();
+                    console.warn('Select2 error suppressed:', e.message);
+                    return false;
+                }
+            });
+
+            // Handle unhandled promise rejections related to Select2
+            window.addEventListener('unhandledrejection', function(e) {
+                if (e.reason && e.reason.toString().includes('select2')) {
+                    e.preventDefault();
+                    console.warn('Select2 promise rejection suppressed:', e.reason);
+                }
+            });
+        })();
+    </script>
     <script src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
     <script src="{{ asset('js/sweetalert.js') }}"></script>
     {{-- <script src="{{ asset('js/form.js') }}"></script> --}}
     <script>
+        // Global error handler for Select2 issues
+        $(document).ready(function() {
+
+            // Override console.error to catch Select2 errors
+            var originalError = console.error;
+            console.error = function() {
+                var args = Array.prototype.slice.call(arguments);
+                var message = args.join(' ');
+                
+                // Suppress specific Select2 errors that are not critical
+                if (message.includes('select2') && 
+                    (message.includes('destroy') || message.includes('not using Select2'))) {
+                    console.warn('Select2 warning (suppressed):', message);
+                    return;
+                }
+                
+                // Call original error function for other errors
+                originalError.apply(console, args);
+            };
+
+            // Add safe Select2 methods to jQuery prototype
+            $.fn.safeSelect2 = function(options) {
+                return this.each(function() {
+                    var $this = $(this);
+                    try {
+                        if ($this.hasClass('select2-hidden-accessible')) {
+                            $this.select2('destroy');
+                        }
+                        $this.select2(options || {});
+                    } catch (e) {
+                        console.warn('Safe Select2 failed for element:', this, e);
+                    }
+                });
+            };
+
+            $.fn.safeSelect2Destroy = function() {
+                return this.each(function() {
+                    var $this = $(this);
+                    try {
+                        if ($this.hasClass('select2-hidden-accessible')) {
+                            $this.select2('destroy');
+                        }
+                    } catch (e) {
+                        console.warn('Safe Select2 destroy failed for element:', this, e);
+                    }
+                });
+            };
+        });
+
+        // Safe Select2 destroy function
+        function safeSelect2Destroy(selector) {
+            try {
+                var $element = $(selector);
+                if ($element.length && $element.hasClass('select2-hidden-accessible')) {
+                    $element.select2('destroy');
+                }
+            } catch (e) {
+                console.warn('Select2 destroy failed for selector: ' + selector, e);
+            }
+        }
+
+        // Safe Select2 initialization
+        function safeSelect2Init(selector, options) {
+            try {
+                // Validate selector is not empty
+                if (!selector || selector.trim() === '') {
+                    console.warn('Empty selector passed to safeSelect2Init');
+                    return;
+                }
+                
+                var $element = $(selector);
+                if ($element.length) {
+                    // Destroy existing Select2 if present
+                    if ($element.hasClass('select2-hidden-accessible')) {
+                        $element.select2('destroy');
+                    }
+                    // Initialize Select2
+                    $element.select2(options || {});
+                }
+            } catch (e) {
+                console.warn('Select2 initialization failed for selector: ' + selector, e);
+            }
+        }
+
         function refreshTable(table) {
             table.DataTable().ajax.reload();
         }
@@ -224,7 +366,39 @@
                 .parents(
                     'form').serialize() + '&type=print';
             print_this(url);
-
         }
+
+        // Initialize Select2 for location dropdown in modal when modal is shown
+        $('#manage-stock-model').on('shown.bs.modal', function () {
+            // Small delay to ensure DOM is ready
+            setTimeout(function() {
+                safeSelect2Init('#location-input', {
+                    placeholder: 'Please select',
+                    allowClear: true
+                });
+            }, 100);
+        });
+
+        // Clean up Select2 when modal is hidden
+        $('#manage-stock-model').on('hidden.bs.modal', function () {
+            safeSelect2Destroy('#location-input');
+            // Clear form values to prevent issues
+            $('#current_qty_available').val('');
+            $('#quantity-input').val('');
+        });
+
+        // Handle tab switching to reinitialize Select2 if needed
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            var target = $(e.target).attr("href");
+            if (target === '#stock_movements') {
+                // Reinitialize Select2 for stock movements tab
+                setTimeout(function() {
+                    if (typeof safeSelect2Init === 'function') {
+                        safeSelect2Init("#storeLocation");
+                        safeSelect2Init("#moveType");
+                    }
+                }, 100);
+            }
+        });
     </script>
 @endpush

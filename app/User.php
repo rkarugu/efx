@@ -262,53 +262,38 @@ class User extends Authenticatable implements JWTSubject
         $cashier = $this;
         $today = today();
 
+        // Optimized: Direct sum without unnecessary select
         $cashDrops = DB::table('cash_drop_transactions')
-            ->select('cashier_id', DB::raw('SUM(amount) as total_drops'))
             ->whereDate('created_at', $today)
             ->where('cashier_id', $cashier->id)
             ->sum('amount');
 
-        $orders = WaPosCashSalesItemReturns::whereDate('accepted_at', $today)
-            ->with('PosCashSale')
-            ->whereHas('PosCashSale', function ($q) use ($cashier) {
-                $q->where('attending_cashier', $cashier->id);
-            })
-            ->get()
-            ->pluck('PosCashSale')
-            ->unique();
-
-        $returnsTotal  = DB::table("wa_pos_cash_sales_items_return")
-            ->select(
-                DB::raw("SUM(wa_pos_cash_sales_items_return.return_quantity * wa_pos_cash_sales_items.selling_price) as amount")
-            )
+        // Optimized: Direct calculation without eager loading
+        $returnsTotal = DB::table("wa_pos_cash_sales_items_return")
             ->join('wa_pos_cash_sales_items', 'wa_pos_cash_sales_items.id', 'wa_pos_cash_sales_items_return.wa_pos_cash_sales_item_id')
             ->join('wa_pos_cash_sales', 'wa_pos_cash_sales.id', 'wa_pos_cash_sales_items_return.wa_pos_cash_sales_id')
             ->where('wa_pos_cash_sales.attending_cashier', $cashier->id)
             ->whereDate('accepted_at', $today)
             ->where('accepted', 1)
             ->where('wa_pos_cash_sales_items_return.branch_id', $cashier->restaurant_id)
-            ->value('amount');
+            ->sum(DB::raw('wa_pos_cash_sales_items_return.return_quantity * wa_pos_cash_sales_items.selling_price'));
 
-        // $returnsTotal = $orders->sum->acceptedReturnsTotal;
+        // Optimized: Get payment IDs once and cache
+        $paymentIds = \Cache::remember('pos_cash_payment_ids', 3600, function () {
+            return PaymentMethod::where('use_in_pos', true)
+                ->where('is_cash', true)
+                ->pluck('id')
+                ->toArray();
+        });
 
-        $paymentIds = PaymentMethod::where('use_in_pos', true)
-            ->where('is_cash', true)
-            ->pluck('id')
-            ->toArray();
-
-        $orders = WaPosCashSalesPayments::with('PosCashSale')
-            ->whereHas('PosCashSale', function ($q) use ($today, $cashier) {
-                $q->where('attending_cashier', $cashier->id)
-                    ->whereDate('created_at', $today)
-                    ->where('status', 'Completed');
-            })
-            ->whereIn('payment_method_id', $paymentIds);
-        // ->sum('amount');
-        // ->pluck('PosCashSale')
-        // ->unique();
-        $cashSales = $orders->sum('amount');
-
-
+        // Optimized: Direct sum with join instead of eager loading
+        $cashSales = DB::table('wa_pos_cash_sales_payments')
+            ->join('wa_pos_cash_sales', 'wa_pos_cash_sales.id', 'wa_pos_cash_sales_payments.wa_pos_cash_sales_id')
+            ->where('wa_pos_cash_sales.attending_cashier', $cashier->id)
+            ->whereDate('wa_pos_cash_sales.created_at', $today)
+            ->where('wa_pos_cash_sales.status', 'Completed')
+            ->whereIn('wa_pos_cash_sales_payments.payment_method_id', $paymentIds)
+            ->sum('wa_pos_cash_sales_payments.amount');
 
         return ceil($cashSales - $returnsTotal - $cashDrops);
     }

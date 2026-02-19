@@ -8,11 +8,11 @@ class WaStockBreakingItem extends Model
 
     public function source_item()
     {
-        return $this->belongsTo(WaInventoryItem::Class,'source_item_id');
+        return $this->belongsTo(WaInventoryItem::class,'source_item_id');
     }
 
     public function destination_item()
     {
-        return $this->belongsTo(WaInventoryItem::Class,'destination_item_id');
+        return $this->belongsTo(WaInventoryItem::class,'destination_item_id');
     }
 }

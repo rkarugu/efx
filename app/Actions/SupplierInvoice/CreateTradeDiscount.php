@@ -88,6 +88,10 @@ class CreateTradeDiscount
 
     protected function calculateDiscount($item, $option)
     {
+        if (!$item || !$option || !isset($item->amount) || $item->amount <= 0) {
+            return 0;
+        }
+        
         if ($option->type == 'Value') {
             return round($item->quantity * $option->discount, 2);
         }

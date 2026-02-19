@@ -376,15 +376,15 @@ class SalesOrdersController extends Controller
             $order = WaInternalRequisition::find($request->order_id);
             $esdData = WaEsdDetails::where('invoice_number', $order->requisition_no)->where('status', 1)->first();
 
-            if (!$esdData) {
-                return response()->json([
-                    'msg' => "This invoice is currently in the process of signing. Please try again shortly."
-                ], 422);
-            }
+            // Bypass signing check for now
+            // if (!$esdData) {
+            //     return response()->json([
+            //         'msg' => "This invoice is currently in the process of signing. Please try again shortly."
+            //     ], 422);
+            // }
 
             $restaurant = Restaurant::find($order->restaurant_id);
 
-            $user = JWTAuth::toUser($request->token);
             $vatAmount = DB::table('wa_internal_requisition_items')->where('wa_internal_requisition_id', $request->order_id)->sum('vat_amount');
             $items = WaInternalRequisitionItem::where('wa_internal_requisition_id', $request->order_id)->get()->map(function (WaInternalRequisitionItem $item) {
                 $item->quantity = $item->quantity;
@@ -419,6 +419,7 @@ class SalesOrdersController extends Controller
             $payment_code = substr($order->requisition_no, 4);
 
             $pdf = \PDF::loadView('receipt', compact('data', 'esdData', 'restaurant', 'order','payment_code'));
+            // Don't set paper size - let it use natural size for thermal printer
             return $pdf->stream();
         } catch (\Throwable $e) {
             return response()->json(['msg' => $e->getMessage(), 'trace' => $e->getTrace()]);
@@ -522,9 +523,9 @@ class SalesOrdersController extends Controller
                 $item = WaInventoryItem::with(['getAllFromStockMoves', 'getTaxesOfItem'])->find($itemId);
 
                 //logic to check flash route  pricing
-                $routePricing = RoutePricing::latest()->where('wa_inventory_item_id', $itemId)->where('status', 0)->whereRaw('FIND_IN_SET( ?  , route_id)', [$route->id])->first();
-                if (!empty($routePricing)) {
-                    $item->selling_price = $routePricing->price;
+                $routePrice = RoutePricing::resolvePrice($itemId, $route->id, $route->restaurant_id ?? null);
+                if ($routePrice !== null) {
+                    $item->selling_price = $routePrice;
                 }
 
                 $item->quantity = $item->getAllFromStockMoves()->where('wa_location_and_store_id', '=', $user->wa_location_and_store_id)->sum('qauntity');

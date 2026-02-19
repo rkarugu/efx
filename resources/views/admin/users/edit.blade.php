@@ -222,7 +222,7 @@
             createApp
         } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
 
-        const app = createApp({
+        window.vueApp = createApp({
             data() {
                 return {
                     selectedRoleId: null,
@@ -266,7 +266,6 @@
                     let selected_branch_id = $("#branch").val();
                     // managedepartment(selected_branch_id);
                     manageStoreLocation(selected_branch_id);
-
                 });
 
 
@@ -329,10 +328,11 @@
                         });
                     }
                 },
+                
             },
         })
 
-        app.mount('#edit-user-page')
+        window.vueAppInstance = window.vueApp.mount('#edit-user-page')
     </script>
 
     <script>

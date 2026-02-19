@@ -57,6 +57,7 @@
                 $model == 'sales-commission-bands' ||
                 $model == 'sales-invoices' ||
                 $model == 'parking-lists' ||
+                $model == 'salesman-orders' ||
                 $model == 'salesman-shifts' ||
                 $model == 'delivery-schedules' ||
                 $model == 'delivery-schedules-live' ||
@@ -789,6 +790,7 @@
     <li class="treeview @if (isset($model) &&
             ($model == 'order-taking-schedules' ||
                 $model == 'reported-shift-issues' ||
+                $model == 'salesman-orders' ||
                 $model == 'salesman-shifts' ||
                 $model == 'shift-reopen-request' ||
                 $model == 'salesman-offsite-requests')) active @endif">
@@ -805,6 +807,14 @@
             {{--                                            </a> --}}
             {{--                                        </li> --}}
             {{--                                    @endif --}}
+
+            @if ($logged_user_info->role_id == 1 || isset($my_permissions['salesman-orders___view']))
+                <li class="@if (isset($model) && $model == 'salesman-orders') active @endif">
+                    <a href="{!! route('salesman-orders.index') !!}"><i class="fa fa-circle"></i>
+                        Salesman Orders
+                    </a>
+                </li>
+            @endif
 
             @if ($logged_user_info->role_id == 1 || isset($my_permissions['order-taking-schedules___view']))
                 <li class="@if (isset($model) && $model == 'salesman-shifts') active @endif">

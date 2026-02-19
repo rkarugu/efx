@@ -562,6 +562,12 @@ function salesAndReceivablesPermissionFunction()
                                 'view' => 'view'
                             ],
                             'children' => [
+                                'Salesman Orders' => [
+                                    'model' => 'salesman-orders',
+                                    'permissions' => [
+                                        'view' => 'view'
+                                    ]
+                                ],
                                 'Salesman Shifts' => [
                                     'model' => 'order-taking-schedules',
                                     'permissions' => [

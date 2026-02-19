@@ -84,6 +84,9 @@
                     "url": '{!! route($model . '.index') !!}',
                     "dataType": "json",
                     "type": "GET",
+                    "headers": {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                    },
                     data: function(data) {
                         var from = $('#start-date').val();
                         var to = $('#end-date').val();
@@ -95,6 +98,17 @@
                         //     $('#getTotal').html(suc.total);
                         // }
                         return suc.data;
+                    },
+                    "error": function(xhr, error, thrown) {
+                        console.log('AJAX Error Details:');
+                        console.log('Status:', xhr.status);
+                        console.log('Status Text:', xhr.statusText);
+                        console.log('Response Text:', xhr.responseText);
+                        console.log('Error:', error);
+                        console.log('Thrown:', thrown);
+                        
+                        // Show user-friendly error
+                        alert('Error loading data. Please check the console for details and refresh the page.');
                     }
                 },
                 'fnDrawCallback': function(oSettings) {

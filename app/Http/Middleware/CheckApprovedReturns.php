@@ -5,14 +5,14 @@ namespace App\Http\Middleware;
 use Closure;
 use App\WaDemand;
 use App\Model\Setting;
-use Illuminate\Http\Request;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckApprovedReturns
 {
-    public function handle(Request $request, Closure $next): Response
+    public function handle(HttpRequest $request, Closure $next): Response
     {
         if (!Auth::check()) {
             return $next($request);

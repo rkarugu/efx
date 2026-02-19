@@ -15,6 +15,11 @@ class DeliveryScheduleCustomer extends Model
 
     protected $guarded = [];
 
+    protected $dates = [
+        'delivered_at',
+        'delivery_prompted_at',
+    ];
+
     protected $appends = [
         'orders',
         'order_ids',
@@ -23,6 +28,16 @@ class DeliveryScheduleCustomer extends Model
     ];
 
     public function customer(): BelongsTo
+    {
+        return $this->belongsTo(WaRouteCustomer::class, 'customer_id', 'id');
+    }
+
+    public function deliverySchedule(): BelongsTo
+    {
+        return $this->belongsTo(DeliverySchedule::class, 'delivery_schedule_id', 'id');
+    }
+
+    public function routeCustomer(): BelongsTo
     {
         return $this->belongsTo(WaRouteCustomer::class, 'customer_id', 'id');
     }
