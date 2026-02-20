@@ -137,9 +137,6 @@ class ProcessedInvoiceController extends Controller
                 ->editColumn('amount', function ($invoice) {
                     return manageAmountFormat($invoice->amount);
                 })
-                ->addColumn('user.name', function ($invoice) {
-                    return $invoice->user->name ?? 'N/A';
-                })
                 ->addColumn('action', function ($invoice) {
                     return view('admin.maintainsuppliers.processed_invoices.action', ['invoice' => $invoice]);
                 })

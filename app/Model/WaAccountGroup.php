@@ -75,46 +75,17 @@ class WaAccountGroup extends Model
                 $inventory_op_amount .= " AND (wa_gl_trans.restaurant_id = $restaurant)";
             }
         }
-        // Use a more efficient approach with left join instead of multiple subqueries
-        $query = $this->hasMany('App\Model\WaChartsOfAccount', 'wa_account_group_id', 'id')
-            ->leftJoin('wa_gl_trans', 'wa_gl_trans.account', '=', 'wa_charts_of_accounts.account_code')
+        return $this->hasMany('App\Model\WaChartsOfAccount', 'wa_account_group_id', 'id')
             ->select([
-                'wa_charts_of_accounts.*',
-                \DB::RAW('COALESCE(SUM(CASE WHEN YEAR(wa_gl_trans.trans_date) = ' . $this_year . ' THEN wa_gl_trans.amount ELSE 0 END), 0) as this_year'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN YEAR(wa_gl_trans.trans_date) = ' . $prev_year . ' THEN wa_gl_trans.amount ELSE 0 END), 0) as prev_year'),
+                '*',
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code AND YEAR(trans_date) = "' . $this_year . '") as this_year'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code AND YEAR(trans_date) = "' . $prev_year . '") as prev_year'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code ' . $date . ') as t_amount'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code ' . $date . ' AND amount > 0 AND (wa_gl_trans.transaction_type = "Goods Received Note" OR wa_gl_trans.transaction_type = "EXPENSE")) as purchase_amount'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code ' . $close_stock . ' AND amount > 0) as close_stock_amount'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code ' . $posdate . ') as pos_amount'),
+                \DB::RAW('(SELECT SUM(amount) from wa_gl_trans where account = wa_charts_of_accounts.account_code ' . $inventory_op_amount . ' AND amount > 0) as inventory_op_amount'),
             ]);
-        
-        // Add date filtering for t_amount
-        if ($startdate && $enddate) {
-            $getDate1 = date('Y-m-d', strtotime($startdate)) . ' 00:00:00';
-            $getDate2 = date('Y-m-d', strtotime($enddate)) . ' 23:59:59';
-            $query->addSelect([
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.created_at BETWEEN "' . $getDate1 . '" AND "' . $getDate2 . '" THEN wa_gl_trans.amount ELSE 0 END), 0) as t_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.created_at BETWEEN "' . $getDate1 . '" AND "' . $getDate2 . '" AND wa_gl_trans.amount > 0 AND (wa_gl_trans.transaction_type = "Goods Received Note" OR wa_gl_trans.transaction_type = "EXPENSE") THEN wa_gl_trans.amount ELSE 0 END), 0) as purchase_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.created_at <= "' . $getDate2 . '" AND wa_gl_trans.amount > 0 THEN wa_gl_trans.amount ELSE 0 END), 0) as close_stock_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.created_at BETWEEN "' . $getDate1 . '" AND "' . $getDate2 . '" AND wa_gl_trans.transaction_type = "POS Sales" THEN wa_gl_trans.amount ELSE 0 END), 0) as pos_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.created_at < "' . $getDate1 . '" AND wa_gl_trans.amount > 0 THEN wa_gl_trans.amount ELSE 0 END), 0) as inventory_op_amount'),
-            ]);
-        } else {
-            $query->addSelect([
-                \DB::RAW('COALESCE(SUM(wa_gl_trans.amount), 0) as t_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.amount > 0 AND (wa_gl_trans.transaction_type = "Goods Received Note" OR wa_gl_trans.transaction_type = "EXPENSE") THEN wa_gl_trans.amount ELSE 0 END), 0) as purchase_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.amount > 0 THEN wa_gl_trans.amount ELSE 0 END), 0) as close_stock_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.transaction_type = "POS Sales" THEN wa_gl_trans.amount ELSE 0 END), 0) as pos_amount'),
-                \DB::RAW('COALESCE(SUM(CASE WHEN wa_gl_trans.amount > 0 THEN wa_gl_trans.amount ELSE 0 END), 0) as inventory_op_amount'),
-            ]);
-        }
-        
-        // Add restaurant filtering if specified
-        if ($restaurant) {
-            if (is_array($restaurant)) {
-                $query->whereIn('wa_gl_trans.tb_reporting_branch', $restaurant);
-            } else {
-                $query->where('wa_gl_trans.restaurant_id', $restaurant);
-            }
-        }
-        
-        return $query->groupBy('wa_charts_of_accounts.id');
     }
 
     public function getChartAccountBudget()

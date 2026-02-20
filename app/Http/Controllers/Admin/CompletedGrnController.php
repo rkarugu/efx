@@ -14,7 +14,6 @@ use App\ReturnedGrn;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Yajra\DataTables\Facades\DataTables;
 
 class CompletedGrnController extends Controller
@@ -35,10 +34,7 @@ class CompletedGrnController extends Controller
         //     return redirect()->back()->withErrors(['errors' => pageRestrictedMessage()]);
         // }
 
-        try {
-            Log::info('CompletedGrnController: Starting query build');
-            
-            $query = WaGrn::query()
+        $query = WaGrn::query()
             ->select([
                 'wa_grns.id',
                 'wa_grns.delivery_date',
@@ -51,9 +47,9 @@ class CompletedGrnController extends Controller
                 'orders.purchase_no',
                 'orders.documents',
                 'suppliers.name AS supplier_name',
-                DB::raw('"" AS received_by'),
+                'users.name AS received_by',
                 'locations.location_name',
-                DB::raw('COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.order_price")) AS DECIMAL(10,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.qty")) AS DECIMAL(10,2)) - COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)), 0) AS total_amount'),
+                DB::raw('SUM(invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) AS total_amount'),
             ])
             ->withCount('returnsToPrint')
             ->with([
@@ -62,7 +58,10 @@ class CompletedGrnController extends Controller
             ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
             ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
             ->join('wa_location_and_stores AS locations', 'locations.id', 'orders.wa_location_and_store_id')
-
+            ->join('wa_stock_moves AS moves', function ($query) {
+                $query->on('moves.stock_id_code', '=', 'wa_grns.item_code')->whereColumn('grn_number', '=', 'document_no');
+            })
+            ->join('users', 'users.id', 'moves.user_id')
             ->when(request()->filled('location'), function ($query) {
                 $query->where('orders.wa_location_and_store_id', request()->location);
             })
@@ -73,27 +72,9 @@ class CompletedGrnController extends Controller
                 $query->where('orders.restaurant_id', auth()->user()->restaurant_id);
             });
 
-        $query->groupBy([
-            'wa_grns.grn_number',
-            'wa_grns.id',
-            'wa_grns.delivery_date',
-            'wa_grns.wa_purchase_order_id',
-            'wa_grns.is_printed',
-            'wa_grns.supplier_invoice_no',
-            'wa_grns.cu_invoice_number',
-            'wa_grns.documents_sent',
-            'orders.purchase_no',
-            'orders.documents',
-            'suppliers.name',
+        $query->groupBy('wa_grns.grn_number');
 
-            'locations.location_name'
-        ]);
-
-        Log::info('CompletedGrnController: Query built successfully');
-        
         if (request()->wantsJson()) {
-            Log::info('CompletedGrnController: Processing DataTables request');
-            
             return DataTables::eloquent($query)
                 ->editColumn('is_printed', function ($grn) {
                     return $grn->is_printed > 0 ? "Printed" : "Not Printed";
@@ -120,22 +101,6 @@ class CompletedGrnController extends Controller
             'locations' => WaLocationAndStore::get(),
             'suppliers' => WaSupplier::get(),
         ]);
-        
-        } catch (\Exception $e) {
-            Log::error('CompletedGrnController Error: ' . $e->getMessage());
-            Log::error('CompletedGrnController Stack Trace: ' . $e->getTraceAsString());
-            
-            if (request()->wantsJson()) {
-                return response()->json([
-                    'error' => 'An error occurred while loading data.',
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine()
-                ], 500);
-            }
-            
-            return redirect()->back()->withErrors(['error' => 'An error occurred while loading data: ' . $e->getMessage()]);
-        }
     }
 
     public function show($slug)

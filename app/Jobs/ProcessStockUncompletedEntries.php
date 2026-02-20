@@ -42,16 +42,7 @@ class ProcessStockUncompletedEntries
         DB::beginTransaction();
         try {
             $debtor = StockDebtorTranItem::with('debtorTran')->where('document_no','like','SAS%')
-            ->where('is_processed',0)->where('inventory_item_id',$this->inventoryItemId)->first();
-            
-            // Also check for POS cash sales (CS- prefix) to prevent duplicates
-            if (!$debtor) {
-                $debtor = StockDebtorTranItem::with('debtorTran')
-                    ->where('document_no','like','CS-%')
-                    ->where('is_processed',0)
-                    ->where('inventory_item_id',$this->inventoryItemId)
-                    ->first();
-            } 
+            ->where('is_processed',0)->where('inventory_item_id',$this->inventoryItemId)->first(); 
             if ($debtor) {
                 $inventoryItem = WaInventoryItem::find($debtor->inventory_item_id);
                 $stockDebtor = StockDebtor::with('employee')->where('id',$debtor->stock_debtors_id)->first();
@@ -67,28 +58,6 @@ class ProcessStockUncompletedEntries
                     
                 $series_module = WaNumerSeriesCode::where('code', $documentExpoded[0])->first();
                 $sellingPrice = $debtor->price;
-                
-                // Check if a stock movement already exists for this document and inventory item
-                $existingStockMove = WaStockMove::where('document_no', $debtor->document_no)
-                    ->where('wa_inventory_item_id', $inventoryItem->id)
-                    ->where('wa_location_and_store_id', $this->locationStoreId)
-                    ->first();
-                
-                // Skip processing if stock movement already exists to prevent duplicates
-                if ($existingStockMove) {
-                    // Log the duplicate prevention for debugging
-                    \Log::info('Duplicate stock movement prevented', [
-                        'document_no' => $debtor->document_no,
-                        'inventory_item_id' => $inventoryItem->id,
-                        'location_store_id' => $this->locationStoreId,
-                        'existing_stock_move_id' => $existingStockMove->id
-                    ]);
-                    
-                    // Mark as processed since stock movement already exists
-                    StockDebtorTranItem::where('id', $debtor->id)
-                        ->update(['is_processed' => 1, 'quantity_pending' => 0]);
-                    return;
-                }
                 
                 $quantityPending = $quantity;
                 if ($current_qoh >= $quantity) {

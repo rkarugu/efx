@@ -291,144 +291,111 @@
             </tr>
         </thead>
         <tbody>
-            @php $totalAmount = $withHoldingTotal = $paidTototal = 0; @endphp
+            @php $totalAmount = $withHoldingTotal = $paidTototal =0; @endphp
             @foreach ($voucher->voucherItems as $item)
                 @php
-                    try {
-                        // Safely access payable relationship
-                        $payable = $item->payable ?? null;
-                        $itemType = $item->payable_type ?? 'invoice';
-                        $transDate = $payable && $payable->tran_date ? $payable->tran_date->format('Y-m-d') : $voucher->created_at->format('Y-m-d');
-                        $reference = $payable->suppreference ?? 'N/A';
-                        $description = $item->description ?? 'Payment Item';
-                        $amount = $payable->total_amount_inc_vat ?? $payable->ov_amount ?? $item->amount ?? 0;
-                        $withholding = $payable->withholding_amount ?? 0;
-                        $professionalWithholding = $item->professional_withholding ?? 0;
-                        
-                        if ($payable && isset($payable->notes) && $payable->notes) {
-                            $noteAmountTotal = 0;
-                            $noteAmountWithholding = 0;
-                            $notePaidTototal = 0;
-                            foreach ($payable->notes as $note) {
-                                $noteAmount = $note->amount ?? 0;
-                                $noteWithholding = $note->withholding_amount ?? 0;
-                                $noteAmountTotal += $note->type == 'CREDIT' ? -$noteAmount : $noteAmount;
-                                $noteAmountWithholding += $note->type == 'CREDIT' ? -$noteWithholding : $noteWithholding;
-                                $notePaidTototal += $noteAmountTotal - $noteAmountWithholding;
-                            }
-                            $totalAmount += ($payable->total_amount_inc_vat ?? $payable->ov_amount ?? 0) + $noteAmountTotal;
-                            $withHoldingTotal += ($payable->withholding_amount ?? 0) + $noteAmountWithholding;
-                            $paidTototal += ($payable->total_amount_inc_vat ?? $payable->ov_amount ?? 0) - ($payable->withholding_amount ?? 0) + $noteAmountTotal;
-                        } elseif (isset($item->payable_type) && ($item->payable_type == 'advance' || $item->payable_type == 'bill')) {
-                            $amount = $payable->amount ?? $item->amount ?? 0;
+                    if ($item->payable->notes) {
+                        $noteAmountTotal = 0;
+                        $noteAmountWithholding = 0;
+                        $notePaidTototal = 0;
+                        foreach ($item->payable->notes as $note) {
+                            $noteAmountTotal += $note->type == 'CREDIT' ? '-' . $note->amount : $note->amount;
+                            $noteAmountWithholding +=
+                                $note->type == 'CREDIT' ? '-' . $note->withholding_amount : $note->withholding_amount;
+                            $notePaidTototal += $noteAmountTotal - $noteAmountWithholding;
                         }
-                    } catch (Exception $e) {
-                        // Fallback values if any error occurs
-                        $itemType = 'invoice';
-                        $transDate = $voucher->created_at->format('Y-m-d');
-                        $reference = 'N/A';
-                        $description = 'Payment Item';
-                        $amount = $item->amount ?? 0;
-                        $withholding = 0;
-                        $professionalWithholding = 0;
+                        $totalAmount += $item->payable->total_amount_inc_vat + $noteAmountTotal;
+                        $withHoldingTotal += $item->payable->withholding_amount + $noteAmountWithholding;
+                        $paidTototal +=
+                            $item->payable->total_amount_inc_vat -
+                            $item->payable->withholding_amount +
+                            $noteAmountTotal;
+                    } elseif ($item->payable_type == 'advance' || $item->payable_type == 'bill') {
+                        $totalAmount += $item->payable->amount;
+                        $withHoldingTotal += $item->payable->withholding_amount;
+                        $paidTototal += $item->payable->amount - $item->payable->withholding_amount;
+                    } else {
+                        $totalAmount += $item->payable->total_amount_inc_vat;
+                        $withHoldingTotal += $item->payable->withholding_amount;
+                        $paidTototal += $item->payable->total_amount_inc_vat - $item->payable->withholding_amount;
                     }
                 @endphp
-                
-                @if ($itemType == 'advance')
+                @if ($item->payable_type == 'advance')
                     <tr>
-                        <td>{{ $transDate }}</td>
-                        <td>{{ $payable->supplier_invoice_number ?? $reference }}</td>
+                        <td>{{ $item->payable->created_at->format('Y-m-d') }}</td>
+                        <td>{{ $item->payable->id }}</td>
                         <td>ADVANCE</td>
-                        <td>{{ $payable->cu_invoice_number ?? $description }}</td>
                         <td></td>
+                        <td>{{ $item->payable->purchaseOrder?->purchase_no }}</td>
                         <td></td>
                         <td class="text-right">
-                            {{ manageAmountFormat($payable->amount ?? $item->amount ?? 0) }}
+                            {{ manageAmountFormat($item->payable->amount) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat($withholding) }}
+                            {{ manageAmountFormat($item->payable->withholding_amount) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat(($payable->amount ?? $item->amount ?? 0) - $withholding) }}
+                            {{ manageAmountFormat($item->payable->amount - $item->payable->withholding_amount) }}
                         </td>
                     </tr>
-                @elseif($itemType == 'bill')
+                @elseif($item->payable_type == 'bill')
                     <tr>
-                        <td>{{ $transDate }}</td>
-                        <td>{{ $payable->supplier_invoice_number ?? $reference }}</td>
+                        <td>{{ $item->payable->created_at?->format('Y-m-d') }}</td>
+                        <td>{{ $item->payable->supplier_invoice_number }}</td>
                         <td>BILL</td>
-                        <td>{{ $payable->cu_invoice_number ?? $description }}</td>
+                        <td>{{ $item->payable->cu_invoice_number }}</td>
                         <td></td>
                         <td></td>
                         <td class="text-right">
-                            {{ manageAmountFormat($payable->amount ?? $item->amount ?? 0) }}
+                            {{ manageAmountFormat($item->payable->amount) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat($withholding) }}
+                            {{ manageAmountFormat($item->payable->withholding_amount) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat(($payable->amount ?? $item->amount ?? 0) - $withholding) }}
+                            {{ manageAmountFormat($item->payable->amount - $item->payable->withholding_amount) }}
                         </td>
                     </tr>
                 @else
                     <tr>
-                        <td>{{ $transDate }}</td>
-                        <td>{{ $reference }}</td>
+                        <td>{{ $item->payable->trans_date->format('Y-m-d') }}</td>
+                        <td>{{ $item->payable->suppreference }}</td>
                         <td>INVOICE</td>
-                        <td>{{ $payable->cu_invoice_number ?? $description }}</td>
-                        <td>{{ $payable->purchaseOrder->purchase_no ?? '' }}</td>
-                        <td>{{ $payable->invoice->grn_number ?? '' }}</td>
+                        <td>{{ $item->payable->cu_invoice_number }}</td>
+                        <td>{{ $item->payable->purchaseOrder?->purchase_no }}</td>
+                        <td>{{ $item->payable->invoice?->grn_number }}</td>
                         <td class="text-right">
-                            {{ manageAmountFormat($amount) }}
+                            {{ manageAmountFormat($item->payable->total_amount_inc_vat) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat($withholding + $professionalWithholding) }}
+                            {{ manageAmountFormat($item->payable->withholding_amount + $item->professional_withholding) }}
                         </td>
                         <td class="text-right">
-                            {{ manageAmountFormat($amount - $withholding) }}
+                            {{ manageAmountFormat($item->payable->total_amount_inc_vat - $item->payable->withholding_amount) }}
                         </td>
                     </tr>
-                    @if ($payable && isset($payable->notes) && $payable->notes)
-                        @foreach ($payable->notes as $note)
-                            @php
-                                $noteType = $note->type ?? 'NOTE';
-                                $noteAmount = $note->amount ?? 0;
-                                $noteWithholding = $note->withholding_amount ?? 0;
-                                $displayAmount = $noteType == 'CREDIT' ? -$noteAmount : $noteAmount;
-                                $displayWithholding = $noteType == 'CREDIT' ? -$noteWithholding : $noteWithholding;
-                            @endphp
+                    @if ($item->payable->notes)
+                        @foreach ($item->payable->notes as $note)
                             <tr>
-                                <td>{{ $note->note_date ?? $transDate }}</td>
-                                <td>{{ $note->supplier_invoice_number ?? $reference }}</td>
-                                <td>{{ $noteType }}</td>
-                                <td>{{ $note->cu_invoice_number ?? $description }}</td>
+                                <td>{{ $note->note_date }}</td>
+                                <td>{{ $note->supplier_invoice_number }}</td>
+                                <td>{{ $type = $note->type }}</td>
+                                <td>{{ $note->cu_invoice_number }}</td>
                                 <td></td>
                                 <td></td>
                                 <td class="text-right">
-                                    {{ manageAmountFormat($displayAmount) }}
+                                    {{ manageAmountFormat($type == 'CREDIT' ? '-' . $note->amount : $note->amount) }}
                                 </td>
                                 <td class="text-right">
-                                    {{ manageAmountFormat($displayWithholding) }}
+                                    {{ manageAmountFormat($type == 'CREDIT' ? '-' . $note->withholding_amount : $note->withholding_amount) }}
                                 </td>
                                 <td class="text-right">
-                                    {{ manageAmountFormat($displayAmount - $displayWithholding) }}
+                                    {{ manageAmountFormat($type == 'CREDIT' ? '-' . ($note->amount - $note->withholding_amount) : $note->amount - $note->withholding_amount) }}
                                 </td>
                             </tr>
                         @endforeach
                     @endif
                 @endif
-                @php
-                    try {
-                        $totalAmount += $amount;
-                        $withHoldingTotal += $withholding + $professionalWithholding;
-                        $paidTototal += $amount - $withholding;
-                    } catch (Exception $e) {
-                        // Fallback to item amount if payable access fails
-                        $itemAmount = $item->amount ?? 0;
-                        $totalAmount += $itemAmount;
-                        $paidTototal += $itemAmount;
-                    }
-                @endphp
             @endforeach
         </tbody>
         <tfoot>

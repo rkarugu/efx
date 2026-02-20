@@ -1,10 +1,3 @@
-{{-- Debug info --}}
-<small style="font-size: 10px; color: #999;">
-    Sent: {{ $grn->documents_sent ? 'Y' : 'N' }} | 
-    Recv: {{ $grn->documents_received ? 'Y' : 'N' }} | 
-    Perm: {{ can('process', 'pending-grns') ? 'Y' : 'N' }}
-</small><br>
-
 @if ($grn->documents_sent)
     @if (!$grn->documents_received && can('process', 'pending-grns'))
         <span class="row-action">
@@ -27,6 +20,4 @@
             <i class="fa fa-file-text"></i>
         </a>
     @endif
-@else
-    <small style="color: #999;">No actions (docs not sent)</small>
 @endif
