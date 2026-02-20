@@ -50,7 +50,7 @@
                 $model == 'support-team' ||
                 $model == 'ticket-category' ||
                 $model == 'activity-logs')) active @endif">
-        <a href="#"><i class="fa fa-fw fa-server"></i><span>System Administration</span>
+        <a href="#"><i class="fa fa-fw fa-cogs"></i><span>Platform Admin</span>
             <span class="pull-right-container">
                 <i class="fa fa-angle-left pull-right"></i>
             </span>
@@ -217,13 +217,13 @@
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['roles___view']))
                             <li class="@if (isset($model) && $model == 'roles') active @endif"><a
                                     href="{!! route('roles.index') !!}"><i class="fa fa-circle"></i>
-                                    <span>Roles</span></a></li>
+                                    <span>Roles and Permissions</span></a></li>
                         @endif
 
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['employees___view']))
                             <li class="@if (isset($model) && $model == 'employees') active @endif"><a
                                     href="{!! route('employees.index') !!}"><i class="fa fa-circle"></i>
-                                    <span>Employees</span></a>
+                                    <span>Users</span></a>
                             </li>
                         @endif
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['employees___view']))
@@ -437,7 +437,7 @@
                             $model == 'payment-methods' ||
                             $model == 'payment-modes' ||
                             $model == 'payment-providers')) active @endif">
-                    <a href="#"><i class="fa fa-circle"></i> Receivables/Payables
+                    <a href="#"><i class="fa fa-circle"></i> Payments
                         <span class="pull-right-container">
                             <i class="fa fa-angle-left pull-right"></i>
                         </span>

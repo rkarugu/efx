@@ -139,7 +139,7 @@
                 $model == 'item-has-count' ||
                 $model == 'stock-uncompleted-sales' || 
                 $model == 'stock-non-debtors')) active @endif">
-        <a href="#"><i class="fa fa-fw fa-boxes"></i><span>Inventory</span>
+        <a href="#"><i class="fa fa-fw fa-warehouse"></i><span>Inventory</span>
             <span class="pull-right-container">
                 <i class="fa fa-angle-left pull-right"></i>
             </span>
@@ -167,7 +167,7 @@
                             $model == 'display-split-requests' ||
                             $model == 'price-list-cost-change' ||
                             $model == 'rejected-approval')) active @endif">
-                    <a href="#"><i class="fa fa-circle"></i> Maintain Item
+                    <a href="#"><i class="fa fa-circle"></i> Stock
                         <span class="pull-right-container">
                             <i class="fa fa-angle-left pull-right"></i>
                         </span>
@@ -175,8 +175,7 @@
                     <ul class="treeview-menu">
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['maintain-items___view']))
                             <li class="@if (isset($model) && $model == 'maintain-items') active @endif">
-                                <a href="{!! route('maintain-items.index') !!}"><i class="fa fa-circle"></i> Manage
-                                    Items</a>
+                                <a href="{!! route('maintain-items.index') !!}"><i class="fa fa-circle"></i> Manage Stock</a>
                             </li>
                         @endif
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['maintain-items___manage-standard-cost']))

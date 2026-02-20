@@ -40,7 +40,7 @@
                 'gl_reconciliation-overview'
             ]) ? 'active' : ''; ?>
             <li class="treeview <?= $active_class ?>">
-                <a href="#"><i class="fa fa-book-open"></i><span>General Ledger</span>
+                <a href="#"><i class="fa fa-landmark"></i><span>General Ledger</span>
                     <span class="pull-right-container">
                         <i class="fa fa-angle-left pull-right"></i>
                     </span>

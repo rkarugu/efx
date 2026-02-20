@@ -32,7 +32,7 @@
                 $model == 'trade-discount-demands-report' ||
                 $model == 'withholding-tax-payments-report' ||
                 $model == 'withholding-files')) active @endif">
-        <a href="#"><i class="fa fa-fw fa-credit-card"></i><span>Accounts Payables</span>
+        <a href="#"><i class="fa fa-fw fa-file-invoice-dollar"></i><span>Vendor Management</span>
             <span class="pull-right-container">
                 <i class="fa fa-angle-left pull-right"></i>
             </span>

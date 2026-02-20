@@ -22,7 +22,7 @@
                             $rmodel == 'purchases-by-supplier')) active @endif
                 @endif">
 
-        <a href="#"><i class="fa fa-fw fa-cart-arrow-down"></i><span>Purchases</span>
+        <a href="#"><i class="fa fa-fw fa-shopping-cart"></i><span>Purchase Procurement</span>
             <span class="pull-right-container">
                 <i class="fa fa-angle-left pull-right"></i>
             </span>

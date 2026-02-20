@@ -22,13 +22,13 @@
 
         <ul class="sidebar-menu" data-widget="tree">
             <li class="header">MAIN NAVIGATION</li>
-            <li><a href="{!! route('admin.dashboard') !!}"><i class="fa fa-dashboard"></i> <span>Dashboard</span></a></li>
+            <li><a href="{!! route('admin.dashboard') !!}"><i class="fa fa-tachometer-alt"></i> <span>Executive Summary</span></a></li>
             
             @if ($logged_user_info->role_id == 1 || isset($my_permissions['management-dashboard___view']))
                 <li class="@if (isset($model) && $model == 'management-dashboard') active @endif">
                     <a href="{!! route('admin.chairman-dashboard') !!}">
-                        <i class="fa fa-dashboard"></i>
-                        <span>Management Dashboard</span>
+                        <i class="fa fa-chart-bar"></i>
+                        <span>Business Insights</span>
                     </a>
                 </li>
             @endif

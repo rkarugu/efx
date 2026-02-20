@@ -133,14 +133,14 @@
             $model == 'sales-and-receivables-reports' ||
             $model == 'dispatch-logs' ||
             $model == 'route-group-rep') ) active @endif">
-        <a href="#"><i class="fa fa-fw fa-cash-register"></i> <span> Sales & Receivables</span>
+        <a href="#"><i class="fa fa-fw fa-chart-line"></i> <span> Revenue Management</span>
             <span class="pull-right-container"><i class="fa fa-angle-left pull-right"></i></span>
         </a>
 
         <ul class="treeview-menu">
             @if ($logged_user_info->role_id == 1 || isset($my_permissions['maintain-customers___view']))
                 <li class="@if (isset($model) && $model == 'maintain-customers') active @endif">
-                    <a href="{!! route('maintain-customers.index') !!}"><i class="fa fa-circle"></i>Maintain Customers</a>
+                    <a href="{!! route('maintain-customers.index') !!}"><i class="fa fa-circle"></i>Customer Management</a>
                 </li>
             @endif
 
@@ -162,7 +162,7 @@
                         $model == 'manage-delivery-centers' ||
                         $model == 'route-group-rep') ) active @endif">
                     <a href="#">
-                        <i class="fa fa-circle"></i> Route Manager
+                        <i class="fa fa-circle"></i> Routes
                         <span class="pull-right-container"><i class="fa fa-angle-left pull-right"></i></span>
                     </a>
 
@@ -427,7 +427,7 @@
                             $model == 'pos_cash_payments' ||
                             $model == 'cash-banking-report' ||
                             $model == 'pos-return-list_late')) active @endif">
-                    <a href="#"><i class="fa fa-circle"></i> Cash Sales
+                    <a href="#"><i class="fa fa-circle"></i> Sales
                         <span class="pull-right-container">
                             <i class="fa fa-angle-left pull-right"></i>
                         </span>
@@ -435,8 +435,7 @@
                     <ul class="treeview-menu">
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['pos-cash-sales___view']))
                             <li class="@if (isset($model) && $model == 'pos-cash-sales') active @endif"><a
-                                    href="{!! route('pos-cash-sales.index') . getReportDefaultFilterForTrialBalance() !!}"><i class="fa fa-circle"></i>POS Cash
-                                    Sales</a></li>
+                                    href="{!! route('pos-cash-sales.index') . getReportDefaultFilterForTrialBalance() !!}"><i class="fa fa-circle"></i>Point of Sales</a></li>
                         @endif
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['pos-cash-sales___dispatch-progress']))
                             <li class="@if (isset($model) && $model == 'dispatch-progress') active @endif">
