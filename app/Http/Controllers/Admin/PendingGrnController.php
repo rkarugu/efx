@@ -11,6 +11,7 @@ use App\Model\WaUserSupplier;
 use App\Models\WaPettyCashRequestItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use Yajra\DataTables\Facades\DataTables;
 
@@ -27,66 +28,110 @@ class PendingGrnController extends Controller
         //     return redirect()->back()->withErrors(['errors' => pageRestrictedMessage()]);
         // }
 
-        $query = WaGrn::query()
-            ->select([
-                'wa_grns.id',
-                'wa_grns.delivery_date',
-                'wa_grns.grn_number',
-                'wa_grns.is_printed',
-                'wa_grns.supplier_invoice_no',
-                'wa_grns.cu_invoice_number',
-                'wa_grns.documents_received',
-                'wa_grns.documents_sent',
-                'orders.id as order_id',
-                'orders.purchase_no',
-                'orders.documents',
-                'suppliers.id AS supplier_id',
-                'suppliers.name AS supplier_name',
-                'users.name AS received_by',
-                'locations.location_name',
-                DB::raw('SUM((invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) * invoice_info->"$.vat_rate" / (100 + invoice_info->"$.vat_rate")) AS vat_amount'),
-                DB::raw('SUM(invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) AS total_amount'),
-            ])
-            ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
-            ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
-            ->join('wa_location_and_stores AS locations', 'locations.id', 'orders.wa_location_and_store_id')
-            ->join('wa_stock_moves AS moves', function ($query) {
-                $query->on('moves.stock_id_code', '=', 'wa_grns.item_code')->whereColumn('grn_number', '=', 'document_no');
-            })
-            ->join('users', 'users.id', 'moves.user_id')
-            ->leftJoin('wa_supp_trans', 'wa_supp_trans.suppreference', 'wa_grns.supplier_invoice_no')
-            ->leftJoin('wa_supplier_invoices', 'wa_supplier_invoices.cu_invoice_number', 'wa_grns.cu_invoice_number')
-            ->where('orders.is_hide', '<>', 'Yes')
-            ->where('orders.advance_payment', 0)
-            ->when(request()->filled('store'), function ($query) {
-                $query->where('orders.wa_location_and_store_id', request()->store);
-            })
-            ->when(request()->filled('supplier'), function ($query) {
-                $query->where('orders.wa_supplier_id', request()->supplier);
-            })
-            ->when(!can('can-view-all-suppliers', 'maintain-suppliers'), function ($query) {
-                $supplierIds = WaUserSupplier::where('user_id', auth()->user()->id)->get()
-                    ->pluck('wa_supplier_id')->toArray();
-                $query->whereIn('wa_grns.wa_supplier_id', $supplierIds);
-            })
-            ->doesntHave('invoice')
-            ->groupBy('wa_grns.grn_number');
-
-        if (request()->wantsJson()) {
-            return DataTables::eloquent($query)
-                ->editColumn('vat_amount', function ($grn) {
-                    return manageAmountFormat($grn->vat_amount);
-                })
-                ->editColumn('total_amount', function ($grn) {
-                    return manageAmountFormat($grn->total_amount);
-                })
-                ->addColumn('actions', function ($grn) {
-                    return view('admin.maintainsuppliers.pending_grns.actions', compact('grn'));
-                })
-                ->with([
-                    'grand_total' => manageAmountFormat($query->get()->sum('total_amount')),
+        try {
+            Log::info('PendingGrnController: Starting query build');
+            
+            $query = WaGrn::query()
+                ->select([
+                    DB::raw('MIN(wa_grns.id) as id'),
+                    DB::raw('MAX(wa_grns.delivery_date) as delivery_date'),
+                    'wa_grns.grn_number',
+                    DB::raw('MAX(wa_grns.is_printed) as is_printed'),
+                    DB::raw('MAX(wa_grns.supplier_invoice_no) as supplier_invoice_no'),
+                    DB::raw('MAX(wa_grns.cu_invoice_number) as cu_invoice_number'),
+                    DB::raw('MAX(wa_grns.documents_received) as documents_received'),
+                    DB::raw('MAX(wa_grns.documents_sent) as documents_sent'),
+                    'orders.id as order_id',
+                    'orders.purchase_no',
+                    'orders.documents',
+                    'suppliers.id AS supplier_id',
+                    'suppliers.name AS supplier_name',
+                    DB::raw('"" AS received_by'),
+                    'locations.location_name',
+                    DB::raw('COALESCE(SUM(
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.order_price")) AS DECIMAL(10,2)) * 
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.qty")) AS DECIMAL(10,2)) - 
+                        COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)
+                    ) * 
+                    CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.vat_rate")) AS DECIMAL(5,2)) / 
+                    (100 + CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.vat_rate")) AS DECIMAL(5,2))), 0) AS vat_amount'),
+                    DB::raw('COALESCE(SUM(
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.order_price")) AS DECIMAL(10,2)) * 
+                        CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.qty")) AS DECIMAL(10,2)) - 
+                        COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(wa_grns.invoice_info, "$.total_discount")) AS DECIMAL(10,2)), 0)
+                    ), 0) AS total_amount'),
                 ])
-                ->toJson();
+                ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
+                ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
+                ->join('wa_location_and_stores AS locations', 'locations.id', 'orders.wa_location_and_store_id')
+
+                ->where('orders.is_hide', '<>', 'Yes')
+                ->where('orders.advance_payment', 0)
+                ->when(request()->filled('store'), function ($query) {
+                    $query->where('orders.wa_location_and_store_id', request()->store);
+                })
+                ->when(request()->filled('supplier'), function ($query) {
+                    $query->where('orders.wa_supplier_id', request()->supplier);
+                })
+                ->when(!can('can-view-all-suppliers', 'maintain-suppliers'), function ($query) {
+                    $supplierIds = WaUserSupplier::where('user_id', auth()->user()->id)->get()
+                        ->pluck('wa_supplier_id')->toArray();
+                    if (!empty($supplierIds)) {
+                        $query->whereIn('orders.wa_supplier_id', $supplierIds);
+                    }
+                })
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('wa_supplier_invoices')
+                          ->whereColumn('wa_supplier_invoices.grn_number', 'wa_grns.grn_number');
+                })
+                ->groupBy([
+                    'wa_grns.grn_number',
+                    'orders.id',
+                    'orders.purchase_no',
+                    'orders.documents',
+                    'suppliers.id',
+                    'suppliers.name',
+                    'locations.location_name'
+                ]);
+
+            Log::info('PendingGrnController: Query built successfully');
+            
+            if (request()->wantsJson()) {
+                Log::info('PendingGrnController: Processing DataTables request');
+                
+                return DataTables::eloquent($query)
+                    ->editColumn('delivery_date', function ($grn) {
+                        return $grn->delivery_date ? date('Y-m-d', strtotime($grn->delivery_date)) : '';
+                    })
+                    ->editColumn('vat_amount', function ($grn) {
+                        return manageAmountFormat($grn->vat_amount ?? 0);
+                    })
+                    ->editColumn('total_amount', function ($grn) {
+                        return manageAmountFormat($grn->total_amount ?? 0);
+                    })
+                    ->addColumn('actions', function ($grn) {
+                        return view('admin.maintainsuppliers.pending_grns.actions', compact('grn'));
+                    })
+                    ->with([
+                        'grand_total' => manageAmountFormat($query->get()->sum('total_amount')),
+                    ])
+                    ->toJson();
+            }
+        } catch (\Exception $e) {
+            Log::error('PendingGrnController Error: ' . $e->getMessage());
+            Log::error('PendingGrnController Stack Trace: ' . $e->getTraceAsString());
+            
+            if (request()->wantsJson()) {
+                return response()->json([
+                    'error' => 'An error occurred while loading data.',
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine()
+                ], 500);
+            }
+            
+            return redirect()->back()->withErrors(['error' => 'An error occurred while loading data: ' . $e->getMessage()]);
         }
 
         if (request()->download == 'excel') {

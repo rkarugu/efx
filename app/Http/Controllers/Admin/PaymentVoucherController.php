@@ -1344,26 +1344,64 @@ class PaymentVoucherController extends Controller
 
     public function printPdf($voucherId)
     {
-        $voucher = PaymentVoucher::query()
-            ->with([
-                'supplier',
-                'account',
-                'voucherItems',
-                'cheques'
-            ])
-            ->findOrFail($voucherId);
+        // Increase execution time limit to prevent timeout
+        ini_set('max_execution_time', 120); // 2 minutes
+        ini_set('memory_limit', '512M'); // Increase memory limit
+        
+        try {
+            \Log::info('Starting PDF generation for payment voucher: ' . $voucherId);
+            
+            // Load voucher with all necessary relationships - use basic query to avoid column issues
+            $voucher = PaymentVoucher::query()
+                ->with([
+                    'supplier',
+                    'account',
+                    'voucherItems.payable',
+                    'cheques'
+                ])
+                ->findOrFail($voucherId);
 
-        $settings = getAllSettings();
+            \Log::info('Payment voucher data loaded successfully');
 
-        $branch = Restaurant::find(10);
+            // Cache settings to avoid repeated database calls
+            $settings = cache()->remember('all_settings', 300, function () {
+                return getAllSettings();
+            });
 
-        $qr_code = QrCode::generate(
-            $voucher->number . " - " . $voucher->supplier->name . " - " . manageAmountFormat($voucher->amount) . " - " . $voucher->created_at->format('d/m/Y H:i'),
-        );
+            // Cache branch data - load full model to avoid column issues
+            $branch = cache()->remember('branch_10', 300, function () {
+                return Restaurant::find(10);
+            });
 
-        $pdf = Pdf::loadView('admin.payment_vouchers.print', compact('voucher', 'settings', 'branch', 'qr_code'));
+            \Log::info('Generating QR code');
+            $qr_code = QrCode::generate(
+                $voucher->number . " - " . ($voucher->supplier->name ?? 'N/A') . " - " . manageAmountFormat($voucher->amount) . " - " . $voucher->created_at->format('d/m/Y H:i'),
+            );
 
-        return $pdf->stream('payment_voucher_' . date('Y-m-d-H-i-s') . '.pdf');
+            \Log::info('Loading PDF view');
+            $pdf = Pdf::loadView('admin.payment_vouchers.print', compact('voucher', 'settings', 'branch', 'qr_code'))
+                ->set_option('enable_php', true)
+                ->set_option('enable_javascript', false)
+                ->set_option('enable_remote', false)
+                ->set_option('isRemoteEnabled', false)
+                ->set_option('isPhpEnabled', true)
+                ->set_option('defaultFont', 'Arial')
+                ->setPaper('A4', 'portrait');
+
+            \Log::info('PDF generation completed successfully for voucher: ' . $voucherId);
+            
+            return $pdf->stream('payment_voucher_' . $voucher->number . '_' . date('Y-m-d-H-i-s') . '.pdf');
+            
+        } catch (\Exception $e) {
+            \Log::error('PDF generation failed for payment voucher ' . $voucherId . ': ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            // Return a user-friendly error response
+            return response()->json([
+                'error' => 'PDF generation failed. Please try again or contact support.',
+                'message' => 'The system encountered an error while generating the PDF. This may be due to large data size or system load.'
+            ], 500);
+        }
     }
 
     public function printRemittance($voucherId)
