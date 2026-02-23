@@ -27,6 +27,8 @@ use App\Model\User;
 use App\Model\WaInventoryPriceHistory;
 use App\Model\WaLocationAndStore;
 use App\Model\WaSuppTran;
+use App\WaSupplierInvoice;
+use App\WaSupplierInvoiceItem;
 use DB;
 use Illuminate\Support\Facades\Validator;
 use App\ReturnedGrn;
@@ -554,6 +556,47 @@ class ConfirmedReceiveOrderController extends Controller
                 $supplierTrans->prepared_by = $getLoggeduserProfile->id;
                 $supplierTrans->settled = 0;
                 $supplierTrans->save();
+
+                $invoiceNumber = getCodeWithNumberSeries('SUPPLIER_INVOICE_NO');
+                $supplierInvoice = WaSupplierInvoice::create([
+                    'wa_purchase_order_id' => $purchaseOrder->id,
+                    'wa_supp_tran_id' => $supplierTrans->id,
+                    'grn_number' => $grn_number,
+                    'grn_date' => $dateTime,
+                    'supplier_invoice_date' => $dateTime,
+                    'invoice_number' => $invoiceNumber,
+                    'supplier_invoice_number' => $receivePurchaseOrder->supplier_invoice_no ?? $invoiceNumber,
+                    'cu_invoice_number' => $receivePurchaseOrder->cu_invoice_number,
+                    'supplier_id' => $purchaseOrder->wa_supplier_id,
+                    'prepared_by' => $getLoggeduserProfile->id,
+                    'vat_amount' => array_sum($vat_amount_arr),
+                    'amount' => $total_cost_with_vat,
+                ]);
+
+                $grnLines = WaGrn::where('grn_number', $grn_number)->get();
+                foreach ($grnLines as $grnLine) {
+                    $invoiceDetails = json_decode($grnLine->invoice_info);
+                    $qty = (float) ($invoiceDetails->qty ?? $grnLine->qty_received ?? 0);
+                    $orderPrice = (float) ($invoiceDetails->order_price ?? 0);
+                    $totalDiscount = (float) ($invoiceDetails->total_discount ?? 0);
+                    $vatRate = (float) ($invoiceDetails->vat_rate ?? 0);
+
+                    $lineTotal = ($orderPrice * $qty) - $totalDiscount;
+                    $vatAmount = $vatRate > 0 ? ($lineTotal - (($lineTotal * 100) / ($vatRate + 100))) : 0;
+
+                    WaSupplierInvoiceItem::create([
+                        'wa_supplier_invoice_id' => $supplierInvoice->id,
+                        'code' => $grnLine->item_code,
+                        'description' => $grnLine->item_description,
+                        'quantity' => $qty,
+                        'standart_cost_unit' => $orderPrice,
+                        'discount_amount' => $totalDiscount,
+                        'vat_amount' => $vatAmount,
+                        'amount' => $lineTotal,
+                    ]);
+                }
+
+                updateUniqueNumberSeries('SUPPLIER_INVOICE_NO', $invoiceNumber);
                 //  supp trans entry end    
                 if ($allGood) {
                     $orderStatus = 'Received';
