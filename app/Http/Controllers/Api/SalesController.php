@@ -3853,10 +3853,26 @@ Pending Bills Per Waiter
                 $error = $this->validationHandle($validator->messages());
                 return response()->json(['status' => false, 'message' => $error]);
             }
-            $user = JWTAuth::toUser($request->token);
+            $token = $request->token;
+
+            if (!$token) {
+                $authHeader = $request->header('Authorization');
+                if ($authHeader && preg_match('/Bearer\s+(\S+)/i', $authHeader, $matches)) {
+                    $token = $matches[1];
+                }
+            }
+
+            $user = null;
+            try {
+                if ($token) {
+                    $user = JWTAuth::toUser($token);
+                }
+            } catch (\Throwable $e) {
+                $user = null;
+            }
 
 
-            $route = Route::with(['centers', 'centers.waRouteCustomers', 'routePlan', 'routePlan.segments'])->find($request->route_id);
+            $route = Route::with(['centers', 'centers.waRouteCustomers'])->find($request->route_id);
             if($user &&  $user->role_id == 6){
                 foreach ($route->centers as $center) {
                     $center->is_active = 1;
