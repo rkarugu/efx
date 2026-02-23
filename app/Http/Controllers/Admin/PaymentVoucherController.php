@@ -151,13 +151,12 @@ class PaymentVoucherController extends Controller
             return $this->loadBillPayments($breadcum, $title, $supplier, $paymentVouchers, $accounts, $paymentModes, $chqSeries);
         }
 
-        $seriesCode = \App\Model\WaNumerSeriesCode::where('module', 'SUPPLIER_INVOICE_NO')->first();
         $invoices = WaSuppTran::query()
             ->with('invoice.lpo', 'notes')
             ->where('total_amount_inc_vat', '>', 0)
             ->where('supplier_no', $supplier->supplier_code)
             ->where('settled', 0)
-            ->where('grn_type_number', $seriesCode->type_number)
+            ->whereHas('invoice')
             ->whereDoesntHave('payments')
             ->whereDoesntHave('allocation')
             ->get();
@@ -252,13 +251,12 @@ class PaymentVoucherController extends Controller
             'Edit Voucher' => route('payment-vouchers.edit', $voucher)
         ];
 
-        $seriesCode = \App\Model\WaNumerSeriesCode::where('module', 'SUPPLIER_INVOICE_NO')->first();
         $invoices = WaSuppTran::query()
             ->with('invoice.lpo', 'notes')
             ->where('total_amount_inc_vat', '>', 0)
             ->where('supplier_no', $supplier->supplier_code)
             ->where('settled', 0)
-            ->where('grn_type_number', $seriesCode->type_number)
+            ->whereHas('invoice')
             ->whereDoesntHave('payments')
             ->whereDoesntHave('allocation')
             ->get();
