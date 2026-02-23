@@ -1618,9 +1618,9 @@ class SupplierController extends Controller
                 ->get();
 
             $grn = WaGrn::select([
-                DB::raw('SUM(IFNULL(invoice_info->"$.total_discount", 0)) AS total_discount'),
-                DB::raw('SUM((invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) * invoice_info->"$.vat_rate" / (100 + invoice_info->"$.vat_rate")) AS vat_amount'),
-                DB::raw('SUM(invoice_info->"$.order_price" * invoice_info->"$.qty"- IFNULL(invoice_info->"$.total_discount", 0)) AS total_amount'),
+                DB::raw('SUM(IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) AS total_discount'),
+                DB::raw('SUM((CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(18,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(18,2)) - IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(18,2)) / (100 + CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(18,2)))) AS vat_amount'),
+                DB::raw('SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(18,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(18,2)) - IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) AS total_amount'),
             ])
                 ->where('grn_number', $request->grn)
                 ->first();
@@ -1725,7 +1725,7 @@ class SupplierController extends Controller
                 // }
 
                 $grnDiscount = WaGrn::select([
-                    DB::raw('SUM(IFNULL(invoice_info->"$.total_discount", 0)) AS total_discount')
+                    DB::raw('SUM(IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) AS total_discount')
                 ])
                     ->where('grn_number', $request->grn_number)
                     ->first();
