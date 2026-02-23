@@ -299,11 +299,15 @@ class ChartsOfAccountController extends Controller
     {
         try {
 
-            WaChartsOfAccount::whereSlug($slug)->delete();
-            Session::flash('success', 'Deleted successfully.');
+            $deleted = WaChartsOfAccount::whereSlug($slug)->delete();
+            if ($deleted) {
+                Session::flash('success', 'Deleted successfully.');
+            } else {
+                Session::flash('warning', 'Delete failed: record not found.');
+            }
             return redirect()->back();
-        } catch (\Exception $e) {
-            Session::flash('warning', 'Invalid Request');
+        } catch (\Throwable $e) {
+            Session::flash('warning', 'Delete failed: ' . $e->getMessage());
             return redirect()->back();
         }
     }

@@ -2172,7 +2172,7 @@ function getCurrencyDropdown()
 
 function canDeleteParentData()
 {
-    return false;
+    return true;
 }
 
 function getCountryList()
