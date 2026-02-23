@@ -62,12 +62,15 @@
     </style>
 </head>
 <body>
+    @php
+        $settings = getAllSettings();
+    @endphp
     <div class="header" style="text-align: center">
         <p>RETURN FROM GRN</p>
-        <p>KANINI HARAKA ENTERPRISES LTD.</p>
-        <p>PO BOX 5292-01000</p>
-        <p>Tel:0716901443 Fax:N/A</p>
-        <p>reports@kaniniharaka.co.ke</p>
+        <p>{{ $settings['COMPANY_NAME'] ?? '' }}</p>
+        <p>{{ trim(($settings['ADDRESS_2'] ?? '') . ' ' . ($settings['ADDRESS_3'] ?? '')) }}</p>
+        <p>Tel: {{ $settings['PHONE_NUMBER'] ?? '' }} Fax: {{ $settings['FAX_NUMBER'] ?? 'N/A' }}</p>
+        <p>{{ $settings['EMAILS'] ?? '' }}</p>
     </div>
 
     <hr>
@@ -115,7 +118,7 @@
                 <tbody style="vertical-align: baseline">
                     <tr>
                         <td>
-                            <p>KANINI HARAKA ENTERPRISES LTD</p>
+                            <p>{{ $settings['COMPANY_NAME'] ?? '' }}</p>
                             <p>{{ $return['store_location'] }}</p>
                         </td>
                         <td>
