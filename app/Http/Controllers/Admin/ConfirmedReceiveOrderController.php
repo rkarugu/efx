@@ -538,6 +538,22 @@ class ConfirmedReceiveOrderController extends Controller
                     //cr enter end
                 }
 
+                //  supp trans entry start
+                // Create supplier transaction for invoice generation
+                $suppTransSeries = WaNumerSeriesCode::where('module', 'SUPPLIER_INVOICE_NO')->first();
+                $supplierTrans = new WaSuppTran();
+                $supplierTrans->document_no = $grn_number;
+                $supplierTrans->trans_date = $dateTime;
+                $supplierTrans->suppreference = $receivePurchaseOrder->supplier_invoice_no ?? $grn_number;
+                $supplierTrans->cu_invoice_number = $receivePurchaseOrder->cu_invoice_number;
+                $supplierTrans->supplier_no = $purchaseOrder->wa_supplier_id;
+                $supplierTrans->grn_type_number = $suppTransSeries->type_number ?? $series_module->type_number;
+                $supplierTrans->vat_amount = array_sum($vat_amount_arr);
+                $supplierTrans->total_amount_inc_vat = $total_cost_with_vat;
+                $supplierTrans->wa_purchase_order_id = $purchaseOrder->id;
+                $supplierTrans->prepared_by = $getLoggeduserProfile->id;
+                $supplierTrans->settled = 0;
+                $supplierTrans->save();
                 //  supp trans entry end    
                 if ($allGood) {
                     $orderStatus = 'Received';
