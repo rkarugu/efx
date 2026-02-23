@@ -154,7 +154,10 @@ class PaymentVoucherController extends Controller
         $invoices = WaSuppTran::query()
             ->with('invoice.lpo', 'notes')
             ->where('total_amount_inc_vat', '>', 0)
-            ->where('supplier_no', $supplier->supplier_code)
+            ->where(function ($q) use ($supplier) {
+                $q->where('supplier_no', $supplier->id)
+                    ->orWhere('supplier_no', $supplier->supplier_code);
+            })
             ->where('settled', 0)
             ->whereHas('invoice')
             ->whereDoesntHave('payments')
@@ -254,7 +257,10 @@ class PaymentVoucherController extends Controller
         $invoices = WaSuppTran::query()
             ->with('invoice.lpo', 'notes')
             ->where('total_amount_inc_vat', '>', 0)
-            ->where('supplier_no', $supplier->supplier_code)
+            ->where(function ($q) use ($supplier) {
+                $q->where('supplier_no', $supplier->id)
+                    ->orWhere('supplier_no', $supplier->supplier_code);
+            })
             ->where('settled', 0)
             ->whereHas('invoice')
             ->whereDoesntHave('payments')
