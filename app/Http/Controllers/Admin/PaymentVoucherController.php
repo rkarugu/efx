@@ -92,7 +92,7 @@ class PaymentVoucherController extends Controller
         }
 
         if (request()->filled('start_date') && request()->filled('end_date')) {
-            $query->whereBetween('created_at', [request()->start_date . ' 00:00:00', request()->end_date . ' 23:59:59']);
+            $query->whereBetween('payment_vouchers.created_at', [request()->start_date . ' 00:00:00', request()->end_date . ' 23:59:59']);
         }
 
         if (request()->ajax()) {
