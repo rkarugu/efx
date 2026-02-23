@@ -72,7 +72,7 @@ class PendingGrnController extends Controller
             ->doesntHave('invoice')
             ->groupBy('wa_grns.grn_number');
 
-        if (request()->wantsJson()) {
+        if (request()->wantsJson() || (request()->ajax() && request()->has('draw'))) {
             return DataTables::eloquent($query)
                 ->editColumn('vat_amount', function ($grn) {
                     return manageAmountFormat($grn->vat_amount);
