@@ -44,8 +44,8 @@ class PendingGrnController extends Controller
                 'suppliers.name AS supplier_name',
                 'users.name AS received_by',
                 'locations.location_name',
-                DB::raw('SUM((invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) * invoice_info->"$.vat_rate" / (100 + invoice_info->"$.vat_rate")) AS vat_amount'),
-                DB::raw('SUM(invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) AS total_amount'),
+                DB::raw('SUM((CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(18,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(18,2)) - IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(18,2)) / (100 + CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.vat_rate")) AS DECIMAL(18,2)))) AS vat_amount'),
+                DB::raw('SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(18,2)) * CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(18,2)) - IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)) AS total_amount'),
             ])
             ->join('wa_purchase_orders AS orders', 'orders.id', 'wa_grns.wa_purchase_order_id')
             ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
