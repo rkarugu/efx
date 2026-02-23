@@ -34,6 +34,12 @@ class CompletedGrnController extends Controller
         //     return redirect()->back()->withErrors(['errors' => pageRestrictedMessage()]);
         // }
 
+        $totalAmountExpression = 'SUM(' .
+            'CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.order_price")) AS DECIMAL(18,2)) * ' .
+            'CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.qty")) AS DECIMAL(18,2)) - ' .
+            'IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(invoice_info, "$.total_discount")) AS DECIMAL(18,2)), 0)' .
+        ') AS total_amount';
+
         $query = WaGrn::query()
             ->select([
                 'wa_grns.id',
@@ -49,7 +55,7 @@ class CompletedGrnController extends Controller
                 'suppliers.name AS supplier_name',
                 'users.name AS received_by',
                 'locations.location_name',
-                DB::raw('SUM(invoice_info->"$.order_price" * invoice_info->"$.qty" - IFNULL(invoice_info->"$.total_discount", 0)) AS total_amount'),
+                DB::raw($totalAmountExpression),
             ])
             ->withCount('returnsToPrint')
             ->with([
@@ -59,7 +65,8 @@ class CompletedGrnController extends Controller
             ->join('wa_suppliers AS suppliers', 'suppliers.id', 'orders.wa_supplier_id')
             ->join('wa_location_and_stores AS locations', 'locations.id', 'orders.wa_location_and_store_id')
             ->join('wa_stock_moves AS moves', function ($query) {
-                $query->on('moves.stock_id_code', '=', 'wa_grns.item_code')->whereColumn('grn_number', '=', 'document_no');
+                $query->on('moves.stock_id_code', '=', 'wa_grns.item_code')
+                    ->whereColumn('wa_grns.grn_number', '=', 'moves.document_no');
             })
             ->join('users', 'users.id', 'moves.user_id')
             ->when(request()->filled('location'), function ($query) {
