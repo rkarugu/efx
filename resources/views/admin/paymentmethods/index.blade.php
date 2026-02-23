@@ -52,7 +52,7 @@
                                 <td> {{ $list->use_in_pos ? 'Yes' : 'No' }} </td>
                                 <td> {{ $list->use_as_channel ? 'Yes' : 'No' }} </td>
                                 <td>{!! $list->paymentGlAccount?$list->paymentGlAccount->account_code:'' !!}</td>
-                                <td>{{ $list->branch_id ?  $list->branch -> name: '' }}</td>
+                                <td>{{ $list->branch?->name ?? '' }}</td>
 
                                 <td class="action_crud">
 
