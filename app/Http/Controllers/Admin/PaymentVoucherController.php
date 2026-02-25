@@ -168,7 +168,8 @@ class PaymentVoucherController extends Controller
             $withholding = $supplier->tax_withhold ? ceil($item->vat_amount * (2 / 16)) : 0;
             $professional_withholding = $supplier->professional_withholding ? ceil($item->vat_amount * 0.05) : 0;
             $item->setAttribute('withholding_tax',   $withholding);
-            $item->setAttribute('due_date', optional($item->invoice)->supplier_invoice_date ?? optional($item->trans_date)->format('Y-m-d'));
+            $dueDate = optional($item->invoice)->supplier_invoice_date;
+            $item->setAttribute('due_date', $dueDate ? $dueDate->format('Y-m-d') : optional($item->trans_date)->format('Y-m-d'));
             $item->setAttribute('paid',   $item->payments()->sum('amount'));
             $item->setAttribute('professional_withholding',   $professional_withholding);
         });
@@ -272,7 +273,8 @@ class PaymentVoucherController extends Controller
             $withholding = $supplier->tax_withhold ? ceil($item->vat_amount * (2 / 16)) : 0;
             $professional_withholding = $supplier->professional_withholding ? ceil($item->vat_amount * 0.05) : 0;
             $item->setAttribute('withholding_tax',   $withholding);
-            $item->setAttribute('due_date', optional($item->invoice)->supplier_invoice_date ?? optional($item->trans_date)->format('Y-m-d'));
+            $dueDate = optional($item->invoice)->supplier_invoice_date;
+            $item->setAttribute('due_date', $dueDate ? $dueDate->format('Y-m-d') : optional($item->trans_date)->format('Y-m-d'));
             $item->setAttribute('paid',   $item->payments()->sum('amount'));
             $item->setAttribute('professional_withholding',   $professional_withholding);
         });
