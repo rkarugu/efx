@@ -235,7 +235,7 @@ class VendorCentreController extends Controller
 
     public function payments($code)
     {
-        $supplier = WaSupplier::where('supplier_code', $code)->first();
+        $supplier = WaSupplier::where('supplier_code', $code)->firstOrFail();
         $payments = PaymentVoucher::query()
             ->select([
                 'payment_vouchers.id',
@@ -252,13 +252,14 @@ class VendorCentreController extends Controller
                 'paymentMode',
                 'supplier'
             ])
-            ->join('wa_bank_file_items AS items', 'items.payment_voucher_id', 'payment_vouchers.id')
-            ->join('wa_bank_files AS files', 'files.id', 'items.wa_bank_file_id')
-            ->join('wa_bank_accounts AS accounts', 'accounts.id', 'files.wa_bank_account_id')
+            ->leftJoin('wa_bank_file_items AS items', 'items.payment_voucher_id', 'payment_vouchers.id')
+            ->leftJoin('wa_bank_files AS files', 'files.id', 'items.wa_bank_file_id')
+            ->leftJoin('wa_bank_accounts AS accounts', 'accounts.id', 'files.wa_bank_account_id')
             ->when(request()->filled('from') && request()->filled('to'), function ($payments) {
-                $payments->whereBetween('files.created_at', [request()->from . ' 00:00:00', request()->to . ' 23:59:59']);
+                $payments->whereBetween('payment_vouchers.created_at', [request()->from . ' 00:00:00', request()->to . ' 23:59:59']);
             })
-            ->where('wa_supplier_id', $supplier->id);
+            ->where('wa_supplier_id', $supplier->id)
+            ->groupBy('payment_vouchers.id');
 
         return DataTables::eloquent($payments)
             ->editColumn('updated_at', function ($payment) {
@@ -292,18 +293,18 @@ class VendorCentreController extends Controller
             ->select('*')
             ->selectRaw("CONCAT_WS('/', suppreference, description) as description")
             ->selectRaw("(CASE WHEN total_amount_inc_vat > 0 THEN total_amount_inc_vat ELSE 0 END) as debit")
-            ->selectRaw("(CASE WHEN total_amount_inc_vat < 0 THEN total_amount_inc_vat ELSE 0 END) as credit")
-            ->selectRaw("(SELECT SUM(prev.total_amount_inc_vat) FROM wa_supp_trans as prev where (prev.supplier_no = '{$supplier->id}' OR prev.supplier_no = '$code') AND prev.id  < wa_supp_trans.id) AS opening_balance")
-            ->where(function ($q) use ($supplier, $code) {
+            ->selectRaw("(CASE WHEN total_amount_inc_vat < 0 THEN ABS(total_amount_inc_vat) ELSE 0 END) as credit")
+            ->selectRaw("(SELECT SUM(prev.total_amount_inc_vat) FROM wa_supp_trans as prev where (prev.supplier_no = '{$supplier->id}' OR prev.supplier_no = '{$supplier->supplier_code}') AND prev.id  < wa_supp_trans.id) AS opening_balance")
+            ->where(function ($q) use ($supplier) {
                 $q->where('supplier_no', $supplier->id)
-                    ->orWhere('supplier_no', $code);
+                    ->orWhere('supplier_no', $supplier->supplier_code);
             })
             ->whereBetween('created_at', [$from, $to]);
 
         $openingBalance = WaSuppTran::query()
-            ->where(function ($q) use ($supplier, $code) {
+            ->where(function ($q) use ($supplier) {
                 $q->where('supplier_no', $supplier->id)
-                    ->orWhere('supplier_no', $code);
+                    ->orWhere('supplier_no', $supplier->supplier_code);
             })
             ->where('created_at', '<', $from)
             ->sum('total_amount_inc_vat');
