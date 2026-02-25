@@ -105,7 +105,6 @@ class VendorCentreController extends Controller
             ])
             ->leftJoinSub($creditNoteSub, 'notes', 'notes.wa_supp_tran_id', 'wa_supp_trans.id')
             ->leftJoinSub($payments, 'payments', 'payments.wa_supp_trans_id', 'wa_supp_trans.id')
-            ->leftJoin('advance_payment_allocations as allocation', 'allocation.wa_supp_trans_id', 'wa_supp_trans.id')
             ->whereHas('invoice')
             ->where(function ($q) use ($supplier, $code) {
                 $q->where('wa_supp_trans.supplier_no', $supplier->id)
@@ -123,15 +122,18 @@ class VendorCentreController extends Controller
                 });
             })
             ->when(request()->status == 'completed', function ($payables) {
-                $payables->whereHas('payments', function ($query) {
-                    $query->whereHas('voucher', function ($query) {
-                        $query->processed();
-                    });
-                })->orWhereHas('allocation');
+                $payables->where(function ($q) {
+                    $q->whereHas('payments', function ($query) {
+                        $query->whereHas('voucher', function ($query) {
+                            $query->processed();
+                        });
+                    })->orWhereHas('allocation');
+                });
             })
             ->when(request()->filled('from') && request()->filled('to'), function ($payables) {
                 $payables->whereBetween('wa_supp_trans.created_at', [request()->from . ' 00:00:00', request()->to . ' 23:59:59']);
-            });
+            })
+            ->groupBy('wa_supp_trans.id');
 
         return DataTables::eloquent($payables)
             ->editColumn('trans_date', function ($payable) {
