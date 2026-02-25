@@ -1352,12 +1352,19 @@ class PaymentVoucherController extends Controller
 
     public function printPdf($voucherId)
     {
+        @ini_set('max_execution_time', '180');
+        @set_time_limit(180);
+
         $voucher = PaymentVoucher::query()
             ->with([
                 'supplier',
                 'account',
-                'voucherItems',
-                'cheques'
+                'voucherItems.payable.invoice',
+                'voucherItems.payable.purchaseOrder',
+                'voucherItems.payable.notes',
+                'cheques',
+                'preparedBy',
+                'paymentMode',
             ])
             ->findOrFail($voucherId);
 
@@ -1369,7 +1376,11 @@ class PaymentVoucherController extends Controller
             $voucher->number . " - " . $voucher->supplier->name . " - " . manageAmountFormat($voucher->amount) . " - " . $voucher->created_at->format('d/m/Y H:i'),
         );
 
-        $pdf = Pdf::loadView('admin.payment_vouchers.print', compact('voucher', 'settings', 'branch', 'qr_code'));
+        $pdf = Pdf::loadView('admin.payment_vouchers.print', compact('voucher', 'settings', 'branch', 'qr_code'))
+            ->setOptions([
+                'isRemoteEnabled' => false,
+                'isHtml5ParserEnabled' => true,
+            ]);
 
         return $pdf->stream('payment_voucher_' . date('Y-m-d-H-i-s') . '.pdf');
     }
