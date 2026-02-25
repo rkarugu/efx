@@ -325,8 +325,18 @@ class PaymentVoucherController extends Controller
         ]);
 
 
-        $user = getLoggeduserProfile();
         $supplier = WaSupplier::where('supplier_code', $code)->firstOrFail();
+
+        // Check for recent duplicate submission
+        $lastVoucher = PaymentVoucher::where('wa_supplier_id', $supplier->id)
+            ->where('amount', collect(json_decode($request->cheques))->sum('amount'))
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->first();
+
+        if ($lastVoucher) {
+            return redirect()->route('maintain-suppliers.vendor_centre', $supplier->supplier_code)
+                ->with('info', 'A similar voucher was recently created. Please check if it is a duplicate.');
+        }
 
         DB::beginTransaction();
 

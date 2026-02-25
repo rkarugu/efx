@@ -30,7 +30,7 @@ class ProcessVoucher
             }
 
             $balance = $item->payable->total_amount_inc_vat - $item->payable->allocated_amount - $item->payable->withholding_amount;
-            if ($item->amount == $balance) {
+            if ($item->amount >= $balance) {
                 $item->payable->update([
                     'settled' => true
                 ]);

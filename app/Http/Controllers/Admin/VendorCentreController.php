@@ -127,7 +127,8 @@ class VendorCentreController extends Controller
                         $query->whereHas('voucher', function ($query) {
                             $query->processed();
                         });
-                    })->orWhereHas('allocation');
+                    })->orWhereHas('allocation')
+                    ->orWhere('wa_supp_trans.settled', 1);
                 });
             })
             ->when(request()->filled('from') && request()->filled('to'), function ($payables) {
