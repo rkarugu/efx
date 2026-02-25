@@ -45,7 +45,7 @@ class PaymentVoucher extends Model
 
     public function scopeProcessing($query)
     {
-        return $query->where('status', self::PENDING)->orWhere('status', self::APPROVED);
+        return $query->whereIn('status', [self::PENDING, self::APPROVED]);
     }
 
     public function scopeProcessed($query)
