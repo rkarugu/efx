@@ -72,6 +72,7 @@ class VendorCentreController extends Controller
 
     public function payables($code)
     {
+        $supplier = WaSupplier::where('supplier_code', $code)->firstOrFail();
         $seriesCode = \App\Model\WaNumerSeriesCode::where('module', 'SUPPLIER_INVOICE_NO')->first();
 
         $creditNoteSub = FinancialNote::query()
@@ -105,8 +106,11 @@ class VendorCentreController extends Controller
             ->leftJoinSub($creditNoteSub, 'notes', 'notes.wa_supp_tran_id', 'wa_supp_trans.id')
             ->leftJoinSub($payments, 'payments', 'payments.wa_supp_trans_id', 'wa_supp_trans.id')
             ->leftJoin('advance_payment_allocations as allocation', 'allocation.wa_supp_trans_id', 'wa_supp_trans.id')
-            ->where('wa_supp_trans.grn_type_number', $seriesCode->type_number)
-            ->where('wa_supp_trans.supplier_no', $code)
+            ->whereHas('invoice')
+            ->where(function ($q) use ($supplier, $code) {
+                $q->where('wa_supp_trans.supplier_no', $supplier->id)
+                    ->orWhere('wa_supp_trans.supplier_no', $code);
+            })
             ->when(request()->status == 'pending', function ($payables) {
                 $payables->whereDoesntHave('payments')
                     ->whereDoesntHave('allocation');
@@ -277,6 +281,7 @@ class VendorCentreController extends Controller
 
     public function statement($code)
     {
+        $supplier = WaSupplier::where('supplier_code', $code)->firstOrFail();
         $from = request()->filled('from') ? request()->from . ' 00:00:00' : now()->subDays(30)->format('Y-m-d 00:00:00');
         $to = request()->filled('to') ? request()->to . ' 23:59:59' : now()->format('Y-m-d 23:59:59');
 
@@ -285,12 +290,18 @@ class VendorCentreController extends Controller
             ->selectRaw("CONCAT_WS('/', suppreference, description) as description")
             ->selectRaw("(CASE WHEN total_amount_inc_vat > 0 THEN total_amount_inc_vat ELSE 0 END) as debit")
             ->selectRaw("(CASE WHEN total_amount_inc_vat < 0 THEN total_amount_inc_vat ELSE 0 END) as credit")
-            ->selectRaw("(SELECT SUM(prev.total_amount_inc_vat) FROM wa_supp_trans as prev where supplier_no = '$code' AND prev.id  < wa_supp_trans.id) AS opening_balance")
-            ->where('supplier_no', $code)
+            ->selectRaw("(SELECT SUM(prev.total_amount_inc_vat) FROM wa_supp_trans as prev where (prev.supplier_no = '{$supplier->id}' OR prev.supplier_no = '$code') AND prev.id  < wa_supp_trans.id) AS opening_balance")
+            ->where(function ($q) use ($supplier, $code) {
+                $q->where('supplier_no', $supplier->id)
+                    ->orWhere('supplier_no', $code);
+            })
             ->whereBetween('created_at', [$from, $to]);
 
         $openingBalance = WaSuppTran::query()
-            ->where('supplier_no', $code)
+            ->where(function ($q) use ($supplier, $code) {
+                $q->where('supplier_no', $supplier->id)
+                    ->orWhere('supplier_no', $code);
+            })
             ->where('created_at', '<', $from)
             ->sum('total_amount_inc_vat');
 
