@@ -193,6 +193,8 @@ class BankFilesController extends Controller
                     'amount' =>  $voucher->amount,
                 ]);
 
+                $voucher->update(['status' => PaymentVoucher::PROCESSED]);
+
                 app(ProcessVoucher::class)->process($voucher);
 
                 app(CreatePaymentDiscount::class)->create($voucher);
