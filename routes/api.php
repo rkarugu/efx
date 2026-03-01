@@ -592,6 +592,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/process-batch-price-change/pdf', [PriceChangeController::class, 'sendToSupplier']);
 
     // Chairman's dashboard APIs
+    // Removed from here
+});
+
+// Chairman's dashboard APIs - using web middleware for session-based auth
+Route::middleware(['web', 'auth'])->group(function () {
     Route::get('chairman-dashboard-sales/{branchId}', [ChairSalesReportController::class, 'sales']);
     Route::get('chairman-dashboard-returns/{branchId}', [ChairSalesReportController::class, 'returns']);
     Route::get('chairman-dashboard-payments/{branchId}', [ChairSalesReportController::class, 'payments']);
@@ -601,7 +606,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('chairman-dashboard-route-sales-performance/{branchId}', [ChairSalesReportController::class, 'routeSalesPerformance']);
     Route::get('chairman-dashboard-category-performance/{branchId}', [ChairSalesReportController::class, 'categoryPerformance']);
     Route::get('chairman-dashboard-debtors/{branchId}', [ChairSalesReportController::class, 'getDebtorBalances']);
-    Route::get('chairman-dashboard-sales-stats/{branchId}', [ChairSalesReportController::class, 'getSalesData']);
+    Route::get('chairman-dashboard-sales-stats/{branchId}', [ChairSalesReportController::class, 'getSalesStats']);
 
     //Chairman's General Dashboard
     Route::get('chairman-general-dashboard-salesman-shift-summary/{branchId}/{startDate}', [ChairmanDashboardController::class, 'salesmanShifts']);

@@ -606,4 +606,65 @@ class ChairSalesReportController extends Controller
         return $data;
     }
 
+    // API methods for Vue component
+    public function getMonthlyReviews()
+    {
+        // Placeholder implementation
+        return response()->json([]);
+    }
+
+    public function getTotalDebtorBalances()
+    {
+        $total = WaDebtorTran::sum('amount');
+        return response()->json($total);
+    }
+
+    public function getMonthlySales()
+    {
+        $branchId = request()->query('branch_id', auth()->user()->restaurant_id);
+        $sales = $this->getBranchSalesData($branchId, now()->subMonths(2)->startOfMonth())->values();
+        return response()->json($sales);
+    }
+
+    public function getMonthlyPayments()
+    {
+        $branchId = request()->query('branch_id', auth()->user()->restaurant_id);
+        $payments = $this->payments($branchId)->getData(true);
+        return response()->json($payments);
+    }
+
+    public function getMonthlyTonnage()
+    {
+        $branchId = request()->query('branch_id', auth()->user()->restaurant_id);
+        $tonnage = $this->tonnage($branchId)->getData(true);
+        return response()->json($tonnage);
+    }
+
+    public function getMonthlyMetUnmetData()
+    {
+        $branchId = request()->query('branch_id', auth()->user()->restaurant_id);
+        $data = $this->metUnmet($branchId)->getData(true);
+        return response()->json($data);
+    }
+
+    public function getCategories()
+    {
+        $categories = WaInventoryCategory::all();
+        return response()->json($categories);
+    }
+
+    public function getRoutePerformance()
+    {
+        $branchId = request()->query('branch_id', auth()->user()->restaurant_id);
+        $data = $this->routeSalesPerformance($branchId)->getData(true);
+        return response()->json($data);
+    }
+
+    // Additional API endpoints needed by Vue component
+    public function getSalesStats($branchId)
+    {
+        $sales = $this->getBranchSalesData($branchId, now()->subMonths(2)->startOfMonth())->values();
+        return response()->json($sales);
+    }
+
 }

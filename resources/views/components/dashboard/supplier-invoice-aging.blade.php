@@ -14,7 +14,7 @@
                     height: 200,
                     type: 'radialBar',
                 },
-                series: [{{ $mostDaysPayable->days }}], // This represents the value (e.g., 50 days)
+                series: [{{ $mostDaysPayable->days ?? 0 }}], // This represents the value (e.g., 50 days)
                 plotOptions: {
                     radialBar: {
                         startAngle: -135,
@@ -47,7 +47,7 @@
                 stroke: {
                     lineCap: 'round'
                 },
-                labels: ['Longest Payable Outstanding - {{ $mostDaysPayable->invoice_no }}']
+                labels: ['Longest Payable Outstanding - {{ $mostDaysPayable->invoice_no ?? 'N/A' }}']
             };
 
             var chart = new ApexCharts(document.querySelector("#gauge-chart"), options);
