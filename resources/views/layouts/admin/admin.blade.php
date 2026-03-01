@@ -3,20 +3,22 @@
 @include('admin.includes.head')
 <style type="text/css">
     .btn-success, .btn-primary, .btn-outline-primary {
-        background-color: #03db1cac !important;
-        border-color: #03db1cac !important;
-        color: #fff !important;
+        background-color: #00d4aa !important;
+        border-color: #00d4aa !important;
+        color: #000 !important;
+        font-weight: 600 !important;
     }
 
-    .btn-success:hover {
-        background-color: #333 !important;
-        border-color: #333 !important;
+    .btn-success:hover, .btn-primary:hover {
+        background-color: #00b894 !important;
+        border-color: #00b894 !important;
+        color: #000 !important;
     }
 
     .btn-outline-primary:hover {
-        color: #fff !important;
-        background-color: #03db1cac !important;
-        border-color: #03db1cac !important;
+        color: #000 !important;
+        background-color: #00b894 !important;
+        border-color: #00b894 !important;
     }
 
     /**
@@ -113,8 +115,7 @@
 
     .modal-full .modal-content {
         margin: 5vh 5vw 5vh 5vw;
-        border-top: 2px solid  #03db1cac;
-
+        border-top: 2px solid #00d4aa;
     }
 
     .loader-overlay {
@@ -285,7 +286,7 @@
         margin-left: 10px;
     }
 </style>
-<body class="hold-transition skin-red sidebar-mini">
+<body class="hold-transition skin-black sidebar-mini">
 <div class="wrapper">
     @include('admin.includes.header')
     @include('admin.includes.sidebar')

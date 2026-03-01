@@ -30,8 +30,13 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ asset('assets/admin/admin_custom.css') }}">
 
-    <!-- Google Font -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700,300italic,400italic,600italic">
+    <!-- Dark Theme -->
+    <link rel="stylesheet" href="{{ asset('assets/admin/dark_theme.css') }}">
+
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
 
     <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
     <!--[if lt IE 9]>
@@ -65,7 +70,7 @@
         .table>colgroup+thead>tr:first-child>th,
         .table>thead:first-child>tr:first-child>td,
         .table>thead:first-child>tr:first-child>th {
-            border: 1px solid #e1e1e1;
+            border: 1px solid #2d3148;
         }
 
         .insertimageicon {
@@ -101,17 +106,17 @@
             padding: 5px 5px 5px 15px;
             display: block;
             font-size: 14px;
-            color: #333;
+            color: #9ca3c8;
         }
 
         .treeview-menu > li > a:hover {
-            color: #555;
-            background: transparent;
+            color: #00d4aa;
+            background: rgba(0, 212, 170, 0.08);
         }
 
         .treeview-menu > li.active > a {
-            color: #fff;
-            background: #3c8dbc;
+            color: #00d4aa;
+            background: rgba(0, 212, 170, 0.12);
         }
 
         .treeview > a > .pull-right-container {

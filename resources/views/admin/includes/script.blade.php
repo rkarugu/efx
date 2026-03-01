@@ -12,7 +12,7 @@
 <script src="{{ asset('assets/admin/dist/js/adminlte.min.js') }}"></script>
 
 <script>
-    window.initAdminLTE = window.initAdminLTE || function () {
+    window.initAdminLTE = function () {
         if (typeof $ !== 'undefined' && typeof $.AdminLTE !== 'undefined') {
             $.AdminLTE.layout.activate();
             $.AdminLTE.tree('.sidebar-menu');
@@ -113,32 +113,34 @@
 
         initOrWaitForAdminLTE();
         
-        // Initialize SlimScroll - with error handling to prevent DOM null errors
-        try {
-            if (typeof $.fn.slimScroll !== 'undefined' && $('.sidebar').length > 0) {
-                setTimeout(function() {
-                    $('.sidebar').slimScroll({
-                        height: 'auto',
-                        size: '3px',
-                        color: 'rgba(0,0,0,0.2)',
-                        wheelStep: 10,
-                        allowPageScroll: true,
-                        alwaysVisible: false,
-                        railVisible: true,
-                        railColor: '#222',
-                        railOpacity: 0.3,
-                        railClass: 'slimScrollRail',
-                        barClass: 'slimScrollBar',
-                        wrapperClass: 'slimScrollDiv',
-                        scrollBy: '30px',
-                        position: 'right',
-                        distance: '1px'
-                    });
-                }, 500); // Delay initialization to ensure DOM is ready
-            }
-        } catch (e) {
-            console.error('SlimScroll initialization error:', e);
+        // ── Sidebar scroll fix ─────────────────────────────────────────
+        // AdminLTE's slimScroll injects inline height on .sidebar which
+        // breaks wheel-scroll. We override it after init and on resize.
+        function fixSidebarScroll() {
+            try {
+                var headerH  = $('.main-header').outerHeight() || 50;
+                var winH     = $(window).height();
+                var scrollH  = winH - headerH;
+                var $sidebar = $('.main-sidebar .sidebar');
+                // Kill slimScroll bar element (visual only, not functional)
+                $sidebar.siblings('.slimScrollBar, .slimScrollRail').hide();
+                // Override inline height set by slimScroll
+                $sidebar.css({
+                    'overflow-y' : 'auto',
+                    'overflow-x' : 'hidden',
+                    'height'     : scrollH + 'px',
+                    'max-height' : 'none'
+                });
+                // Wrapper must also be correct height
+                var $wrap = $sidebar.parent('.slimScrollDiv');
+                if ($wrap.length) {
+                    $wrap.css({ 'height': scrollH + 'px', 'overflow': 'hidden' });
+                }
+            } catch (e) {}
         }
+        // Run after AdminLTE finishes its init (slimScroll runs inside initAdminLTE)
+        setTimeout(fixSidebarScroll, 400);
+        $(window).on('resize', fixSidebarScroll);
         
         // Initialize Push Menu
         if (typeof $.fn.pushMenu !== 'undefined') {
@@ -390,3 +392,46 @@
 
 <!-- Signature validation override script -->
 <script src="{{ asset('js/signature-override.js') }}"></script>
+
+<!-- Theme Toggle Script -->
+<script>
+(function () {
+    var STORAGE_KEY = 'altrom_theme';
+    var body = document.body;
+    var btn  = document.getElementById('theme-toggle-btn');
+    var icon = document.getElementById('theme-toggle-icon');
+
+    function applyTheme(theme) {
+        if (theme === 'light') {
+            body.classList.add('light-mode');
+            if (icon) {
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            }
+            if (btn) btn.setAttribute('title', 'Switch to Dark Mode');
+        } else {
+            body.classList.remove('light-mode');
+            if (icon) {
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            }
+            if (btn) btn.setAttribute('title', 'Switch to Light Mode');
+        }
+    }
+
+    // Apply saved preference immediately (no flash)
+    var saved = localStorage.getItem(STORAGE_KEY) || 'dark';
+    applyTheme(saved);
+
+    // Wire up button click
+    if (btn) {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var current = body.classList.contains('light-mode') ? 'light' : 'dark';
+            var next = current === 'light' ? 'dark' : 'light';
+            localStorage.setItem(STORAGE_KEY, next);
+            applyTheme(next);
+        });
+    }
+})();
+</script>

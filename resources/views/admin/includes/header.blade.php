@@ -18,8 +18,13 @@ $logged_user_info = getLoggeduserProfile();
         <div class="navbar-custom-menu">
             <ul class="nav navbar-nav">
 {{--                <x-notifications></x-notifications>--}}
-                <li class="footer">
-                    <a href="{!! route('users.get.change.profile.password') !!}" title="Change Password"> <i class="fa fa-key"></i></a>
+                <li id="theme-toggle-li">
+                    <a href="#" id="theme-toggle-btn" title="Toggle Light/Dark Mode" onclick="return false;">
+                        <i class="fas fa-sun" id="theme-toggle-icon"></i>
+                    </a>
+                </li>
+                <li>
+                    <a href="{!! route('users.get.change.profile.password') !!}" title="Change Password"><i class="fas fa-key"></i></a>
                 </li>
                 <li class="dropdown user user-menu">
                     <a href="#" class="dropdown-toggle" data-toggle="dropdown">

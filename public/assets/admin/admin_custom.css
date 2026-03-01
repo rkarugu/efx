@@ -130,20 +130,22 @@ fieldset[disabled] .form-control {
 }
 
 .btn-biz-pinkish {
-  background: #03db1cac;
-  color: white;
+  background: #00d4aa;
+  color: #000;
+  font-weight: 600;
 }
 
 .btn-biz-pinkish:hover,
 .btn-biz-pinkish:active,
 .btn-biz-pinkish:focus {
-  background: #03db1cac;
-  color: white;
+  background: #00b894;
+  color: #000;
 }
 
 .btn-biz-greenish {
-  background: #24d800;
-  color: white;
+  background: #00d4aa;
+  color: #000;
+  font-weight: 600;
   padding: 0px 7px;
   font-size: 18px;
 }
@@ -151,8 +153,8 @@ fieldset[disabled] .form-control {
 .btn-biz-greenish:hover,
 .btn-biz-greenish:active,
 .btn-biz-greenish:focus {
-  background: #168300;
-  color: white;
+  background: #00b894;
+  color: #000;
 }
 
 .btn-biz-purplish {

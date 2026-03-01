@@ -1,220 +1,399 @@
 @extends('layouts.admin.admin')
 @section('content')
     <style>
-        .total_total_sales {
-            font-size: 16px;
-            font-weight: 700;
+        /* ── POS Modern Layout ───────────────────────────── */
+        .pos-wrap {
+            padding: 12px 16px;
         }
+        /* Top action bar */
+        .pos-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+            gap: 12px;
+        }
+        .pos-topbar-left { display: flex; align-items: center; gap: 10px; }
+        .pos-topbar-right { display: flex; align-items: center; gap: 10px; }
+
+        /* Customer + total card */
+        .pos-customer-card {
+            background: var(--dark-surface, #1a1d27);
+            border: 1px solid var(--dark-border, #2d3148);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .pos-customer-card .customer-field {
+            flex: 1 1 320px;
+            min-width: 0;
+        }
+        .pos-customer-card .customer-field label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .8px;
+            text-transform: uppercase;
+            color: var(--text-muted, #5c6290);
+            margin-bottom: 6px;
+            display: block;
+        }
+        .pos-customer-card .customer-select-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .pos-customer-card .customer-select-row select {
+            flex: 1;
+        }
+        .pos-total-display {
+            flex: 0 0 auto;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .pos-total-display .total-label {
+            font-size: 12px;
+            color: var(--text-muted, #5c6290);
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            display: block;
+            margin-bottom: 2px;
+        }
+        .pos-total-display .total-value {
+            font-size: 38px;
+            font-weight: 700;
+            color: #00d4aa;
+            line-height: 1;
+        }
+
+        /* Items card */
+        .pos-items-card {
+            background: var(--dark-surface, #1a1d27);
+            border: 1px solid var(--dark-border, #2d3148);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 14px;
+        }
+        .pos-items-card .pos-table-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--dark-border, #2d3148);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .pos-items-card .pos-table-header h4 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary, #e8eaf6);
+            letter-spacing: .3px;
+        }
+
+        /* Table */
+        #mainItemTable {
+            margin: 0 !important;
+            border: none !important;
+        }
+        #mainItemTable thead tr th {
+            background: var(--dark-surface2, #1f2235) !important;
+            color: var(--text-muted, #5c6290) !important;
+            font-size: 10px !important;
+            font-weight: 700 !important;
+            letter-spacing: .9px !important;
+            text-transform: uppercase !important;
+            border-color: var(--dark-border, #2d3148) !important;
+            padding: 10px 10px !important;
+            white-space: nowrap !important;
+        }
+        #mainItemTable thead tr th .hint {
+            color: #00d4aa;
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        #mainItemTable tbody tr td {
+            border-color: var(--dark-border, #2d3148) !important;
+            vertical-align: middle !important;
+            padding: 8px 8px !important;
+            background: transparent !important;
+        }
+        #mainItemTable tbody tr:hover td {
+            background: rgba(0,212,170,0.04) !important;
+        }
+        #mainItemTable tfoot tr th,
+        #mainItemTable tfoot tr td {
+            border-color: var(--dark-border, #2d3148) !important;
+            background: var(--dark-surface2, #1f2235) !important;
+        }
+
+        /* Summary rows in tfoot */
+        .pos-summary-row th {
+            color: var(--text-secondary, #9ca3c8) !important;
+            font-weight: 500 !important;
+            font-size: 12px !important;
+        }
+        .pos-summary-row td {
+            color: var(--text-primary, #e8eaf6) !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+        }
+        .pos-summary-row.total-row th,
+        .pos-summary-row.total-row td {
+            color: #00d4aa !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+        }
+
+        /* Add row FAB */
+        .pos-fab {
+            position: fixed;
+            bottom: 30%;
+            left: 4%;
+            width: 40px;
+            height: 40px;
+            border-radius: 50% !important;
+            background: #00d4aa !important;
+            border-color: #00d4aa !important;
+            color: #000 !important;
+            font-size: 18px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-shadow: 0 4px 16px rgba(0,212,170,0.4) !important;
+            transition: transform .15s ease, box-shadow .15s ease !important;
+            z-index: 900;
+            padding: 0 !important;
+        }
+        .pos-fab:hover {
+            transform: scale(1.1) !important;
+            box-shadow: 0 6px 22px rgba(0,212,170,0.55) !important;
+        }
+
+        /* Continue to payment footer */
+        .pos-footer {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid var(--dark-border, #2d3148);
+        }
+        .btn-pos-pay {
+            background: #00d4aa !important;
+            border-color: #00d4aa !important;
+            color: #000 !important;
+            font-weight: 700 !important;
+            padding: 10px 28px !important;
+            border-radius: 8px !important;
+            font-size: 14px !important;
+            letter-spacing: .3px !important;
+            transition: background .18s ease, transform .15s ease !important;
+        }
+        .btn-pos-pay:hover {
+            background: #00b894 !important;
+            border-color: #00b894 !important;
+            transform: translateY(-1px) !important;
+        }
+        .btn-pos-pay:disabled {
+            opacity: .5 !important;
+            pointer-events: none !important;
+        }
+
+        /* Search autocomplete dropdown */
+        .textData {
+            width: 100%;
+            position: relative;
+            z-index: 99;
+        }
+        .textData table tr:hover, .SelectedLi {
+            background: #00d4aa !important;
+            color: #000 !important;
+            cursor: pointer !important;
+        }
+
+        /* Payment modal */
+        #modelId .modal-dialog { max-width: 520px; }
+        .pay-method-table th {
+            background: var(--dark-surface2, #1f2235) !important;
+            color: var(--text-muted, #5c6290) !important;
+            font-size: 11px !important;
+            text-transform: uppercase !important;
+            letter-spacing: .7px !important;
+        }
+        .pay-summary-due td   { font-size: 14px; font-weight: 600; color: var(--text-primary, #e8eaf6) !important; }
+        .pay-summary-bal td   {
+            font-size: 20px !important;
+            font-weight: 700 !important;
+            background: #00d4aa !important;
+            color: #000 !important;
+        }
+
+        .total_total_sales { font-size: 16px; font-weight: 700; }
     </style>
-    <form id="orderForm" method="POST" action="{{ route($model.'.store') }}" accept-charset="UTF-8" class="" onsubmit="return false;"
-          enctype="multipart/form-data">
 
-        <br>
-        <div class="container-fluid">
-            <div class="clearfix pr-6">
-                <a href="{{ route($model.'.index') }}" class="btn btn-primary pull-left"><i class="fa fa-arrow-rotate-back"> </i> Back</a>
-                <x-drop-component/>
-            </div>
-        </div>
+    <form id="orderForm" method="POST" action="{{ route($model.'.store') }}" accept-charset="UTF-8" onsubmit="return false;" enctype="multipart/form-data">
+        {{ csrf_field() }}
+        <?php
+            $getLoggeduserProfile = getLoggeduserProfile();
+            $purchase_date = date('d-M-Y');
+            $purchase_time = date('H:i:s');
+        ?>
 
-        <br>
-        <section class="content">
-            <div class="box box-primary">
-                <div class="box-header with-border"><h3 class="box-title"> {!! $title !!} </h3></div>
-                @include('message')
+        <div class="pos-wrap">
 
-                {{ csrf_field() }}
-                <?php
-                $getLoggeduserProfile = getLoggeduserProfile();
-                $purchase_date = date('d-M-Y');
-                $purchase_time = date('H:i:s');
-                ?>
-                <div class="row">
-                    <div class="col-md-8">
-                        <div class="row">
-                            <div class="col-sm-10">
-                                <div class="box-body">
-                                    <div class="form-group">
-                                        <label for="">Customer</label>
-                                        <select name="route_customer" id="route_customer" class="route_customer"></select>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-sm-2">
-                                <div class="box-body">
-                                    <div class="form-group">
-                                        <label for="" style="display:block">&nbsp;</label>
-                                        <button type="button" class="btn btn-primary" onclick="load_customer()">
-                                            <i class="fa fa-address-book"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 text-center pt-5">
-                        <div class="box-body">
-                            <div class="form-group">
-                                <label for="" class="text-4xl" style="font-size: 28px">Total: </label>
-                                <label id="top_total" for="" class="text-4xl" style="font-size: 40px">0.0</label>
-                            </div>
-                        </div>
-                    </div>
+            {{-- ── Top action bar ── --}}
+            <div class="pos-topbar">
+                <div class="pos-topbar-left">
+                    <a href="{{ route($model.'.index') }}" class="btn btn-default btn-sm">
+                        <i class="fa fa-arrow-left"></i> Back
+                    </a>
+                    <span style="color:var(--text-muted,#5c6290);font-size:12px;">{!! $title !!}</span>
+                </div>
+                <div class="pos-topbar-right">
+                    <x-drop-component/>
                 </div>
             </div>
-            <div class="box box-primary">
-                <div class="box-header with-border no-padding-h-b">
-                    <div class="col-md-12 no-padding-h ">
-                        {{--                <h3 class="box-title"> Cash Sales</h3>--}}
-                        <button type="button" class="btn btn-danger btn-sm addNewrow"
-                                style="position: fixed;bottom: 30%;left:4%;"><i class="fa fa-plus" aria-hidden="true"></i></button>
-                        <div id="requisitionitemtable" name="item_id[0]">
-                            <table class="table table-bordered table-hover" id="mainItemTable">
-                                <thead>
-                                <tr>
-                                    <th>Selection <span style="color: red;">(Search Atleast 3 Keyword)</span></th>
-                                    <th>Image</th>
-                                    <th>Description</th>
-                                    <th style="width: 90px;">Bal Stock</th>
-                                    <th style="width: 90px;">Unit</th>
-                                    <th style="width: 90px;">QTY</th>
-                                    <th>Selling Price</th>
-                                    <th>VAT Type</th>
-                                    <th style="width: 90px;">Disc%</th>
-                                    <th style="width: 90px;">Discount</th>
-                                    <th>VAT</th>
-                                    <th>Total</th>
-                                    <th>
 
-                                    </th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                <tr>
-                                    <td>
-                                        <input type="text" autofocus placeholder="Search Atleast 3 Keyword"
-                                               class="testIn form-control makemefocus">
-                                        <div class="textData" style="width: 100%;position: relative;z-index: 99;"></div>
-                                    </td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td>
-                                        <button type="button" class="btn btn-danger btn-sm deleteparent">
+            @include('message')
 
-                                            <i class="fa fa-trash"></i>
-                                        </button>
-                                    </td>
-                                </tr>
-                                </tbody>
-                                <tfoot>
-                                <tr>
-                                    <th colspan="11" style="text-align:right">
-                                        Total Price
-                                    </th>
-                                    <td colspan="2">KES <span id="total_exclusive">0.00</span></td>
-                                </tr>
-                                <tr>
-                                    <th colspan="11" style="text-align:right">
-                                        Discount
-                                    </th>
-                                    <td colspan="2">KES <span id="total_discount">0.00</span></td>
-                                </tr>
-                                <tr>
-                                    <th colspan="11" style="text-align:right">
-                                        Total VAT
-                                    </th>
-                                    <td colspan="2">KES <span id="total_vat">0.00</span></td>
-                                </tr>
-                                <tr>
-                                    <th colspan="11" style="text-align:right">
-                                        Total
-                                    </th>
-                                    <td colspan="2">KES <span id="total_total">0.00</span></td>
-                                </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="col-md-12">
-                        <div class="col-md-6">
-                            <div class="box-body">
-                                <div class="form-group">
-                                    <button type="button" class="btn btn-primary btn-sn" id="continuePayment" data-toggle="modal"
-                                            data-target="#modelId">
-                                        <i class="fa fa-arrow-right"></i>
-                                        Continue to Payment
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+            {{-- ── Customer + Total card ── --}}
+            <div class="pos-customer-card">
+                <div class="customer-field">
+                    <label>Customer</label>
+                    <div class="customer-select-row">
+                        <select name="route_customer" id="route_customer" class="route_customer"></select>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="load_customer()" title="Load Customer">
+                            <i class="fa fa-address-book"></i>
+                        </button>
                     </div>
                 </div>
+                <div class="pos-total-display">
+                    <span class="total-label">Order Total</span>
+                    <span class="total-value" id="top_total">0.00</span>
+                </div>
             </div>
-        </section>
+
+            {{-- ── Items table card ── --}}
+            <div class="pos-items-card">
+                <div class="pos-table-header">
+                    <h4><i class="fa fa-list" style="color:#00d4aa;margin-right:8px;"></i> Order Items</h4>
+                    <button type="button" class="btn btn-primary btn-sm addNewrow">
+                        <i class="fa fa-plus"></i> Add Item
+                    </button>
+                </div>
+
+                <div id="requisitionitemtable" name="item_id[0]" style="overflow-x:auto;">
+                    <table class="table table-hover" id="mainItemTable" style="min-width:900px;">
+                        <thead>
+                        <tr>
+                            <th>Selection <span class="hint">(min 3 chars)</span></th>
+                            <th>Image</th>
+                            <th>Description</th>
+                            <th style="width:80px;">Bal Stock</th>
+                            <th style="width:70px;">Unit</th>
+                            <th style="width:80px;">QTY</th>
+                            <th style="width:110px;">Selling Price</th>
+                            <th style="width:110px;">VAT Type</th>
+                            <th style="width:70px;">Disc%</th>
+                            <th style="width:90px;">Discount</th>
+                            <th style="width:70px;">VAT</th>
+                            <th style="width:90px;">Total</th>
+                            <th style="width:46px;"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr>
+                            <td>
+                                <input type="text" autofocus placeholder="Search Atleast 3 Keyword"
+                                       class="testIn form-control makemefocus">
+                                <div class="textData" style="width:100%;position:relative;z-index:99;"></div>
+                            </td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td>
+                                <button type="button" class="btn btn-danger btn-xs deleteparent" title="Remove">
+                                    <i class="fa fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        </tbody>
+                        <tfoot>
+                        <tr class="pos-summary-row">
+                            <th colspan="11" class="text-right">Total Price</th>
+                            <td colspan="2">KES <span id="total_exclusive">0.00</span></td>
+                        </tr>
+                        <tr class="pos-summary-row">
+                            <th colspan="11" class="text-right">Discount</th>
+                            <td colspan="2">KES <span id="total_discount">0.00</span></td>
+                        </tr>
+                        <tr class="pos-summary-row">
+                            <th colspan="11" class="text-right">Total VAT</th>
+                            <td colspan="2">KES <span id="total_vat">0.00</span></td>
+                        </tr>
+                        <tr class="pos-summary-row total-row">
+                            <th colspan="11" class="text-right">Total</th>
+                            <td colspan="2">KES <span id="total_total">0.00</span></td>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div class="pos-footer">
+                    <button type="button" class="btn btn-pos-pay" id="continuePayment" data-toggle="modal" data-target="#modelId">
+                        <i class="fa fa-arrow-right"></i>&nbsp; Continue to Payment
+                    </button>
+                </div>
+            </div>
+
+        </div>{{-- /pos-wrap --}}
+
+        {{-- FAB add row (fixed) --}}
+        <button type="button" class="btn pos-fab addNewrow" title="Add Item">
+            <i class="fa fa-plus"></i>
+        </button>
 
         <input type="hidden" id="attached_sales" name="attached_sales" value="">
 
-        <div class="modal fade" id="modelId" tabindex="-1" role="dialog" aria-labelledby="modelTitleId"
-             aria-hidden="true">
+        {{-- ── Payment Modal ── --}}
+        <div class="modal fade" id="modelId" tabindex="-1" role="dialog" aria-labelledby="modelTitleId" aria-hidden="true">
             <div class="modal-dialog" role="document">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Payments</h5>
+                        <h5 class="modal-title"><i class="fa fa-credit-card" style="color:#00d4aa;margin-right:8px;"></i>Payments</h5>
                         <input class="form-control tenderAmount" name="tenderAmount" type="hidden" value="0"
                                onkeyup="checkBalance()" onchange="checkBalance()">
-
-
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"
-                                style="margin-top:-22px !important">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                             <span aria-hidden="true">&times;</span>
                         </button>
                     </div>
-{{--                    <div class="modal-header">--}}
-{{--                        <button type="button" class="btn btn-primary btn-sn pull-right" id="searchModala" data-toggle="modal"--}}
-{{--                                data-target="#searchModal">--}}
-{{--                            <i class="fa fa-add"></i>--}}
-{{--                            Add Pending Sale--}}
-{{--                        </button>--}}
-{{--                    </div>--}}
-                    <div class="modal-body">
-                        <table class="table table-bordered table-hover">
+                    <div class="modal-body" style="padding:0;">
+                        <table class="table table-hover pay-method-table" style="margin:0;">
                             <thead>
                             <tr>
-                                <th>
-                                    Method
-                                </th>
-                                <th>
-                                    Amount
-                                </th>
-                                <th style="display:none">
-                                    Reference
-                                </th>
+                                <th>Method</th>
+                                <th>Amount</th>
+                                <th style="display:none;">Reference</th>
                             </tr>
                             </thead>
                             <tbody>
                             @foreach ($paymentMethod as $method)
                                 @if($method->is_mpesa)
                                     <tr>
+                                        <td>{{ $method->title }}</td>
                                         <td>
-                                            {{$method->title}}
-                                        </td>
-                                        <td>
-
-                                            <input type="text" class="form-control mpesa"
-                                                   id="mpesa_number"
+                                            <input type="text" class="form-control mpesa" id="mpesa_number"
                                                    name="mpesa_number" value="" placeholder="Enter Customer Number">
-                                            <span  id="error-mpesa-number" class="error-message text-danger" style="display:none;"></span>
-
-
-
+                                            <span id="error-mpesa-number" class="error-message text-danger" style="display:none;"></span>
                                         </td>
                                         <td>
                                             <button id="mpesa_pay" class="btn btn-primary btn-sm mpesa_pay" value="{{ $method->id }}">Push STK</button>
@@ -223,64 +402,59 @@
                                     @continue
                                 @endif
                                 <tr>
+                                    <td>{{ $method->title }}</td>
                                     <td>
-                                        {{$method->title}}
-                                    </td>
-                                    <td>
-
                                         <input type="text" class="form-control checkBalance dynamic-input-method dynamic-input amount"
                                                min="1"
                                                id="payment_method[{{$method->id}}]"
-                                               name="payment_amount[{{$method->id}}]" onkeyup="checkBalance()"
+                                               name="payment_amount[{{$method->id}}]"
+                                               onkeyup="checkBalance()" onchange="checkBalance()"
                                                data-method-title="{{$method->title}}"
                                                data-method-cash="{{$method->is_cash}}"
-                                               onchange="checkBalance()" value="" placeholder="Enter Payment">
-                                        <span  id="error[{{$method->id}}]" class="error-message text-danger" style="display:none;">Please verify  this payment</span>
-                                        <span  id="error-amount[{{$method->id}}]" class="error-message text-danger" style="display:none;">Please Enter Amount</span>
+                                               value="" placeholder="Enter amount">
+                                        <span id="error[{{$method->id}}]" class="error-message text-danger" style="display:none;">Please verify this payment</span>
+                                        <span id="error-amount[{{$method->id}}]" class="error-message text-danger" style="display:none;">Please Enter Amount</span>
                                     </td>
                                     <td>
                                         <input type="hidden" class="form-control reference"
                                                id="payment_remarks[{{$method->id}}]"
-                                               name="payment_remarks[{{$method->id}}]" value=""
-                                               readonly
-                                               placeholder="Enter Reference">
+                                               name="payment_remarks[{{$method->id}}]"
+                                               value="" readonly placeholder="Reference">
                                     </td>
                                 </tr>
                             @endforeach
-                            <tr>
+                            <tr class="pay-summary-due">
                                 <td class="total_total_sales">Total Due</td>
-                                <td colspan="2" style="text-align:right">
+                                <td colspan="2" class="text-right">
                                     <span class="total_total_sales total_total">0.00</span>
                                 </td>
                             </tr>
-                            <tr>
-                            <tr>
+                            <tr class="pay-summary-due">
                                 <td class="total_total_sales">Total Tendered</td>
-                                <td colspan="2" style="text-align:right">
+                                <td colspan="2" class="text-right">
                                     <span class="total_total_sales total_tendered">0.00</span>
                                 </td>
                             </tr>
-                            <td style="font-weight: bold;
-                                font-size: 22px;
-                                background: red;
-                                color: white;">Balance
-                            </td>
-                            <td colspan="2" style="background-color: red;color: white;font-size: 22px;text-align:right"
-                                class="cash_change">0.00
-
-                            </td>
+                            <tr class="pay-summary-bal">
+                                <td style="font-weight:700;font-size:18px;">Balance</td>
+                                <td colspan="2" class="cash_change text-right" style="font-size:18px;font-weight:700;">0.00</td>
                             </tr>
                             </tbody>
                         </table>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-dismiss="modal"><i class="fa fa-close"></i> Close</button>
+                        <button type="button" class="btn btn-default" data-dismiss="modal">
+                            <i class="fa fa-times"></i> Close
+                        </button>
                         @if(isset($permission[$pmodule.'___save']) || $permission == 'superadmin')
-                            <button type="submit" class="btn btn-primary btn-sm addExpense" value="save"> <i class="fa fa-save"></i> Save</button>
+                            <button type="submit" class="btn btn-primary btn-sm addExpense" value="save">
+                                <i class="fa fa-save"></i> Save
+                            </button>
                         @endif
                         @if(isset($permission[$pmodule.'___process']) || $permission == 'superadmin')
                             <button type="submit" class="btn btn-primary btn-sm addExpense processIt" id="process"
-                                    value="send_request" disabled>  <i class="fa fa-check"></i>  Process
+                                    value="send_request" disabled>
+                                <i class="fa fa-check"></i> Process
                             </button>
                         @endif
                     </div>
@@ -490,8 +664,8 @@
         }
 
         .textData table tr:hover, .SelectedLi {
-            background: #000 !important;
-            color: white !important;
+            background: #00d4aa !important;
+            color: #000 !important;
             cursor: pointer !important;
         }
 
