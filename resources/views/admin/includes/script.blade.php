@@ -393,6 +393,9 @@
 <!-- Signature validation override script -->
 <script src="{{ asset('js/signature-override.js') }}"></script>
 
+<!-- Header Menu Script -->
+<script src="{{ asset('assets/admin/js/header-menu.js') }}"></script>
+
 <!-- Theme Toggle Script -->
 <script>
 (function () {

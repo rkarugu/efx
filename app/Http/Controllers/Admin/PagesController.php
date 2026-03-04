@@ -410,4 +410,112 @@ class PagesController extends Controller
         // return $pdf->stream();
         return $pdf->download('selling-Report-'.$request->date.'-'.$request->todate.'.pdf');
     }
+    
+    /**
+     * Load sidebar menu dynamically via AJAX
+     */
+    public function loadSidebarMenu(Request $request)
+    {
+        $menuType = $request->query('menu', 'revenue');
+        $logged_user_info = getLoggeduserProfile();
+        $my_permissions = $logged_user_info->permissions;
+        $route_name = \Route::currentRouteName();
+        $model = null; // Initialize model variable for blade templates
+        $rmodel = null; // Initialize rmodel variable for blade templates
+        
+        // Menu mapping - permission keys must match those used in sidebar include files
+        $menuMap = [
+            'revenue' => [
+                'view' => 'admin.includes.sidebar_includes.sales_and_receivables',
+                'title' => 'REVENUE MANAGEMENT',
+                'permission' => 'sales-and-receivables___view'
+            ],
+            'logistics' => [
+                'view' => 'admin.includes.sidebar_includes.logistics',
+                'title' => 'DELIVERY & LOGISTICS',
+                'permission' => 'delivery_and_logistics___view'
+            ],
+            'purchases' => [
+                'view' => 'admin.includes.sidebar_includes.purchases',
+                'title' => 'PURCHASE PROCUREMENT',
+                'permission' => 'purchases___view'
+            ],
+            'supplier' => [
+                'view' => 'admin.includes.sidebar_includes.supplier_portal',
+                'title' => 'SUPPLIER PORTAL',
+                'permission' => 'supplier-portal___view'
+            ],
+            'vendor' => [
+                'view' => 'admin.includes.sidebar_includes.accounts_payable',
+                'title' => 'VENDOR MANAGEMENT',
+                'permission' => 'account-payables___view'
+            ],
+            'inventory' => [
+                'view' => 'admin.includes.sidebar_includes.inventory',
+                'title' => 'INVENTORY',
+                'permission' => 'inventory___view'
+            ],
+            'ledger' => [
+                'view' => 'admin.includes.sidebar_includes.general_ledger',
+                'title' => 'GENERAL LEDGER',
+                'permission' => 'genralledger___view'
+            ],
+            'hr' => [
+                'view' => 'admin.includes.sidebar_includes.hr',
+                'title' => 'HR AND PAYROLL',
+                'permission' => 'hr-and-payroll___view'
+            ],
+            'fleet' => [
+                'view' => 'admin.includes.sidebar_includes.fleet',
+                'title' => 'FLEET MANAGEMENT',
+                'permission' => 'fleet-management-module___view'
+            ],
+            'helpdesk' => [
+                'view' => 'admin.includes.sidebar_includes.help_desk',
+                'title' => 'HELP DESK',
+                'permission' => 'help-desk___view'
+            ],
+            'comms' => [
+                'view' => 'admin.includes.sidebar_includes.communication_centre',
+                'title' => 'COMMUNICATIONS CENTRE',
+                'permission' => 'communication-center___view'
+            ],
+            'admin' => [
+                'view' => 'admin.includes.sidebar_includes.system_administration',
+                'title' => 'PLATFORM ADMIN',
+                'permission' => 'financial-management___view'
+            ]
+        ];
+        
+        // Validate menu type
+        if (!isset($menuMap[$menuType])) {
+            return response()->json(['error' => 'Invalid menu type'], 400);
+        }
+        
+        $menu = $menuMap[$menuType];
+        
+        // Check permissions
+        if ($logged_user_info->role_id != 1 && !isset($my_permissions[$menu['permission']])) {
+            return response()->json(['error' => 'Access denied'], 403);
+        }
+        
+        // Store active menu in session
+        session(['activeMenu' => $menuType]);
+        
+        // Render the menu view
+        try {
+            $html = view($menu['view'], compact('logged_user_info', 'my_permissions', 'route_name', 'model', 'rmodel'))->render();
+            
+            return response()->json([
+                'html' => $html,
+                'title' => $menu['title']
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Sidebar menu loading error: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Error loading menu: ' . $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
+        }
+    }
 }

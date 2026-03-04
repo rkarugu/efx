@@ -1,0 +1,441 @@
+/* ================================================================
+   HEADER MAIN MENU BAR
+   ================================================================ */
+.header-main-menu {
+  background: #222d32;
+  border-bottom: 1px solid #1a2226;
+  padding: 0;
+  margin: 0;
+  margin-left: 230px;
+  width: calc(100% - 230px);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 900;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.header-main-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.header-main-menu .header-menu-desktop {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  justify-content: center;
+}
+
+.header-main-menu .header-menu-desktop > li {
+  flex: 0 0 auto;
+  position: relative;
+  margin: 0;
+}
+
+.header-main-menu .header-menu-desktop > li::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 25%;
+  height: 50%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.header-main-menu .header-menu-desktop > li:last-child::after {
+  display: none;
+}
+
+.header-main-menu .header-menu-desktop > li > a {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.25s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  line-height: 1;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.header-main-menu .header-menu-desktop > li > a:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  text-decoration: none;
+  border-bottom-color: rgba(255, 255, 255, 0.3);
+}
+
+.header-main-menu .header-menu-desktop > li.active > a {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-bottom-color: #fff;
+  font-weight: 700;
+  text-shadow: none;
+}
+
+.header-main-menu .header-menu-desktop > li > a i {
+  margin-right: 5px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.header-main-menu .header-menu-desktop > li.active > a i {
+  opacity: 1;
+}
+
+.header-main-menu .header-menu-desktop > li > a span {
+  font-size: 11.5px;
+}
+
+/* ================================================================
+   MOBILE MENU TOGGLE
+   ================================================================ */
+.header-menu-toggle {
+  display: none;
+  background: #222d32;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 12px 20px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: all 0.25s ease;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.header-menu-toggle:hover,
+.header-menu-toggle.active {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.header-menu-toggle i {
+  margin-right: 10px;
+}
+
+/* ================================================================
+   MOBILE DROPDOWN
+   ================================================================ */
+.header-menu-mobile-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1a2226;
+  z-index: 1000;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.header-menu-mobile-dropdown.active {
+  display: block;
+}
+
+.mobile-menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mobile-menu-list > li {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mobile-menu-list > li > a {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px;
+  color: rgba(255, 255, 255, 0.65);
+  text-decoration: none;
+  transition: all 0.25s ease;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.mobile-menu-list > li > a:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.mobile-menu-list > li.active > a {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-left: 3px solid #fff;
+}
+
+.mobile-menu-list > li > a i {
+  margin-right: 12px;
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+/* ================================================================
+   SIDEBAR MENU TITLE HEADER
+   ================================================================ */
+.sidebar-menu > li.header.sidebar-menu-title {
+  background: #222d32;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 14px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0;
+}
+
+#active-menu-title {
+  font-size: 12px;
+  letter-spacing: 1.5px;
+}
+
+/* ================================================================
+   SIDEBAR CASCADE / TREEVIEW STYLES
+   ================================================================ */
+
+/* Level 1: Main treeview items */
+#sidebar-submenu-container > li.treeview > a {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  padding: 12px 15px;
+  border-left: 3px solid transparent;
+  transition: all 0.25s ease;
+}
+
+#sidebar-submenu-container > li.treeview > a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border-left-color: rgba(255, 255, 255, 0.4);
+}
+
+#sidebar-submenu-container > li.treeview.active > a {
+  color: #fff;
+  border-left-color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Level 1 arrow icon */
+#sidebar-submenu-container > li.treeview > a > .pull-right-container {
+  transition: transform 0.25s ease;
+}
+
+/* Level 2: Sub-menu */
+#sidebar-submenu-container .treeview-menu {
+  padding-left: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.15);
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  margin-left: 15px;
+}
+
+#sidebar-submenu-container .treeview-menu > li > a {
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 9px 15px 9px 20px;
+  transition: all 0.2s ease;
+  border-left: 2px solid transparent;
+}
+
+#sidebar-submenu-container .treeview-menu > li > a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+  border-left-color: #fff;
+}
+
+#sidebar-submenu-container .treeview-menu > li.active > a {
+  color: #fff;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border-left-color: #fff;
+}
+
+/* Level 2 treeview (nested sub-menu parent) */
+#sidebar-submenu-container .treeview-menu > li.treeview > a {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Level 3: Deeply nested menus */
+#sidebar-submenu-container .treeview-menu .treeview-menu {
+  margin-left: 10px;
+  background: rgba(0, 0, 0, 0.1);
+  border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+#sidebar-submenu-container .treeview-menu .treeview-menu > li > a {
+  font-size: 12px;
+  padding: 8px 15px 8px 18px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+#sidebar-submenu-container .treeview-menu .treeview-menu > li > a:hover {
+  color: #fff;
+}
+
+#sidebar-submenu-container .treeview-menu .treeview-menu > li.active > a {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Circle icons in sub-menus - smaller and subtle */
+#sidebar-submenu-container .treeview-menu .fa-circle {
+  font-size: 6px;
+  margin-right: 8px;
+  vertical-align: middle;
+  opacity: 0.5;
+}
+
+#sidebar-submenu-container .treeview-menu li.active .fa-circle {
+  opacity: 1;
+  color: #fff;
+}
+
+/* Smooth transitions for sidebar content */
+#sidebar-submenu-container {
+  transition: opacity 0.3s ease;
+}
+
+#sidebar-submenu-container.loading {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ================================================================
+   RESPONSIVE: MOBILE
+   ================================================================ */
+@media (max-width: 768px) {
+  .header-main-menu .header-menu-desktop {
+    display: none;
+  }
+
+  .header-menu-toggle {
+    display: block;
+  }
+}
+
+/* ================================================================
+   RESPONSIVE: TABLET & SMALL DESKTOP
+   ================================================================ */
+@media (min-width: 769px) and (max-width: 1280px) {
+  .header-main-menu .header-menu-desktop > li > a {
+    padding: 9px 10px;
+    font-size: 10.5px;
+  }
+
+  .header-main-menu .header-menu-desktop > li > a i {
+    font-size: 12px;
+    margin-right: 3px;
+  }
+
+  .header-main-menu .header-menu-desktop > li > a span {
+    font-size: 10.5px;
+  }
+}
+
+/* ================================================================
+   RESPONSIVE: LARGE DESKTOP
+   ================================================================ */
+@media (min-width: 1281px) {
+  .header-main-menu .header-menu-desktop > li > a {
+    padding: 10px 14px;
+  }
+}
+
+/* ================================================================
+   LIGHT THEME OVERRIDES
+   ================================================================ */
+body.light-mode .header-main-menu {
+  background: #222d32;
+}
+
+body.light-mode .header-main-menu .header-menu-desktop > li > a {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+body.light-mode .header-main-menu .header-menu-desktop > li > a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.light-mode .header-main-menu .header-menu-desktop > li.active > a {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.light-mode .sidebar-menu > li.header.sidebar-menu-title {
+  background: #f4f6f9;
+  color: #333;
+  border-bottom-color: #ddd;
+}
+
+body.light-mode #sidebar-submenu-container > li.treeview > a {
+  color: #333;
+}
+
+body.light-mode #sidebar-submenu-container > li.treeview > a:hover {
+  color: #000;
+}
+
+body.light-mode #sidebar-submenu-container > li.treeview.active > a {
+  color: #000;
+}
+
+body.light-mode #sidebar-submenu-container .treeview-menu {
+  background: rgba(0, 0, 0, 0.03);
+  border-left-color: rgba(0, 0, 0, 0.1);
+}
+
+body.light-mode #sidebar-submenu-container .treeview-menu > li > a {
+  color: #555;
+}
+
+body.light-mode #sidebar-submenu-container .treeview-menu > li > a:hover {
+  color: #000;
+}
+
+body.light-mode #sidebar-submenu-container .treeview-menu > li.active > a {
+  color: #000;
+}
+
+/* ================================================================
+   ADMINLTE LAYOUT OFFSETS
+   The header menu scrolls with the page, positioned after sidebar.
+   ================================================================ */
+
+/* When sidebar is collapsed (50px width) */
+.sidebar-collapse .header-main-menu {
+  margin-left: 50px;
+  width: calc(100% - 50px);
+}
+
+/* On mobile when sidebar is hidden */
+@media (max-width: 767px) {
+  .header-main-menu {
+    margin-left: 0;
+    width: 100%;
+  }
+}

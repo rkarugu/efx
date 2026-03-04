@@ -63,3 +63,5 @@ $logged_user_info = getLoggeduserProfile();
         </div>
     </nav>
 </header>
+<!-- Main Menu Bar - outside main-header to avoid overlap with sidebar -->
+@include('admin.includes.header_menu')

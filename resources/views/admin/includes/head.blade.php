@@ -32,6 +32,9 @@
 
     <!-- Dark Theme -->
     <link rel="stylesheet" href="{{ asset('assets/admin/dark_theme.css') }}">
+    
+    <!-- Header Menu CSS -->
+    <link rel="stylesheet" href="{{ asset('assets/admin/css/header-menu.css') }}">
 
     <!-- Google Font: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

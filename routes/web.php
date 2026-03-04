@@ -273,6 +273,9 @@ Route::group(['prefix' => 'admin', 'namespace' => 'Admin', 'middleware' => ['Adm
     // Account payables reports end
 
     Route::get('get-report-details', [PurchasesReportsController::class, 'getReportDetails'])->name('get-report-details');
+    
+    // Dynamic sidebar menu loading
+    Route::get('load-sidebar-menu', 'PagesController@loadSidebarMenu')->name('admin.load-sidebar-menu');
 });
 
 Route::group(['namespace' => 'Admin', 'middleware' => ['OtpVerified', 'ip-blocker']], function () {

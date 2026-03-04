@@ -697,6 +697,150 @@ table.dataTable thead .sorting_desc {
 }
 
 /* ================================================================
+   TABLE ACTION BUTTONS & ICONS
+================================================================ */
+.table td a,
+.table td button,
+.table td .btn {
+    color: var(--accent) !important;
+    background: transparent !important;
+    border: 1px solid var(--dark-border2) !important;
+    padding: 4px 8px !important;
+    border-radius: var(--radius-sm) !important;
+    margin: 0 2px !important;
+    transition: var(--transition) !important;
+}
+
+.table td a:hover,
+.table td button:hover,
+.table td .btn:hover {
+    background: var(--accent) !important;
+    color: #000 !important;
+    border-color: var(--accent) !important;
+}
+
+.table td a i,
+.table td button i,
+.table td .btn i,
+.table td i.fa,
+.table td i.fas,
+.table td i.far,
+.table td i.fab {
+    color: var(--accent) !important;
+    font-size: 14px !important;
+}
+
+.table td a:hover i,
+.table td button:hover i,
+.table td .btn:hover i {
+    color: #000 !important;
+}
+
+/* Action button specific styles */
+.action_crud a,
+.action_crud button,
+.action-button-div a,
+.action-button-div button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 30px !important;
+    min-height: 30px !important;
+    color: var(--accent) !important;
+    background: var(--dark-surface2) !important;
+    border: 1px solid var(--dark-border2) !important;
+    border-radius: var(--radius-sm) !important;
+}
+
+.action_crud a:hover,
+.action_crud button:hover,
+.action-button-div a:hover,
+.action-button-div button:hover {
+    background: var(--accent) !important;
+    color: #000 !important;
+    border-color: var(--accent) !important;
+}
+
+.action_crud a i,
+.action_crud button i,
+.action-button-div a i,
+.action-button-div button i {
+    color: inherit !important;
+}
+
+/* Ensure all Font Awesome icons in tables are visible */
+.table i.fa,
+.table i.fas,
+.table i.far,
+.table i.fab,
+.table .fa,
+.table .fas,
+.table .far,
+.table .fab {
+    color: var(--accent) !important;
+}
+
+/* Delete buttons should be red */
+.table td .btn-danger,
+.table td a.btn-danger,
+.table td button.btn-danger,
+.table td form[action*="delete"] button,
+.table td form[action*="destroy"] button,
+.table td a[href*="delete"],
+.table td a[onclick*="delete"],
+.table td a[title*="Delete"],
+.table td a[title*="delete"],
+.table td button[title*="Delete"],
+.table td button[title*="delete"],
+.action_crud .btn-danger,
+.action-button-div .btn-danger,
+.action_crud a[href*="delete"],
+.action-button-div a[href*="delete"] {
+    color: var(--danger) !important;
+    background: rgba(255, 83, 112, 0.1) !important;
+    border-color: var(--danger) !important;
+}
+
+.table td .btn-danger:hover,
+.table td a.btn-danger:hover,
+.table td button.btn-danger:hover,
+.table td form[action*="delete"] button:hover,
+.table td form[action*="destroy"] button:hover,
+.table td a[href*="delete"]:hover,
+.table td a[onclick*="delete"]:hover,
+.table td a[title*="Delete"]:hover,
+.table td a[title*="delete"]:hover,
+.table td button[title*="Delete"]:hover,
+.table td button[title*="delete"]:hover,
+.action_crud .btn-danger:hover,
+.action-button-div .btn-danger:hover,
+.action_crud a[href*="delete"]:hover,
+.action-button-div a[href*="delete"]:hover {
+    background: var(--danger) !important;
+    color: #fff !important;
+    border-color: var(--danger) !important;
+}
+
+/* Delete/trash icons should be red */
+.table td .btn-danger i,
+.table td a.btn-danger i,
+.table td .fa-trash,
+.table td .fa-trash-alt,
+.table td .fa-times,
+.table td .fa-remove,
+.table td i.fa-trash,
+.table td i.fa-trash-alt,
+.table td i.fa-times,
+.table td i.fa-remove {
+    color: var(--danger) !important;
+}
+
+.table td .btn-danger:hover i,
+.table td a.btn-danger:hover i {
+    color: #fff !important;
+}
+
+/* ================================================================
    FORMS
 ================================================================ */
 .form-control {
@@ -1614,6 +1758,95 @@ body.light-mode .table > tbody > tr:hover > td {
 
 body.light-mode .table-striped > tbody > tr:nth-child(odd) > td {
     background: #fafbfe !important;
+}
+
+/* Light mode table action buttons */
+body.light-mode .table td a,
+body.light-mode .table td button,
+body.light-mode .table td .btn {
+    color: #00a887 !important;
+    background: #f7f8fc !important;
+    border: 1px solid #c8cedf !important;
+}
+
+body.light-mode .table td a:hover,
+body.light-mode .table td button:hover,
+body.light-mode .table td .btn:hover {
+    background: #00a887 !important;
+    color: #fff !important;
+    border-color: #00a887 !important;
+}
+
+body.light-mode .table td a i,
+body.light-mode .table td button i,
+body.light-mode .table td .btn i,
+body.light-mode .table i.fa,
+body.light-mode .table i.fas,
+body.light-mode .table i.far,
+body.light-mode .table i.fab {
+    color: #00a887 !important;
+}
+
+body.light-mode .table td a:hover i,
+body.light-mode .table td button:hover i,
+body.light-mode .table td .btn:hover i {
+    color: #fff !important;
+}
+
+body.light-mode .action_crud a,
+body.light-mode .action_crud button,
+body.light-mode .action-button-div a,
+body.light-mode .action-button-div button {
+    color: #00a887 !important;
+    background: #f7f8fc !important;
+    border: 1px solid #c8cedf !important;
+}
+
+body.light-mode .action_crud a:hover,
+body.light-mode .action_crud button:hover,
+body.light-mode .action-button-div a:hover,
+body.light-mode .action-button-div button:hover {
+    background: #00a887 !important;
+    color: #fff !important;
+    border-color: #00a887 !important;
+}
+
+/* Light mode delete buttons - red */
+body.light-mode .table td .btn-danger,
+body.light-mode .table td a.btn-danger,
+body.light-mode .table td button.btn-danger,
+body.light-mode .table td form[action*="delete"] button,
+body.light-mode .table td a[href*="delete"],
+body.light-mode .table td a[title*="Delete"],
+body.light-mode .table td a[title*="delete"],
+body.light-mode .action_crud .btn-danger,
+body.light-mode .action-button-div .btn-danger {
+    color: #dc3545 !important;
+    background: rgba(220, 53, 69, 0.1) !important;
+    border-color: #dc3545 !important;
+}
+
+body.light-mode .table td .btn-danger:hover,
+body.light-mode .table td a.btn-danger:hover,
+body.light-mode .table td button.btn-danger:hover,
+body.light-mode .table td form[action*="delete"] button:hover,
+body.light-mode .table td a[href*="delete"]:hover,
+body.light-mode .table td a[title*="Delete"]:hover,
+body.light-mode .table td a[title*="delete"]:hover,
+body.light-mode .action_crud .btn-danger:hover,
+body.light-mode .action-button-div .btn-danger:hover {
+    background: #dc3545 !important;
+    color: #fff !important;
+    border-color: #dc3545 !important;
+}
+
+body.light-mode .table td .btn-danger i,
+body.light-mode .table td a.btn-danger i,
+body.light-mode .table td .fa-trash,
+body.light-mode .table td .fa-trash-alt,
+body.light-mode .table td i.fa-trash,
+body.light-mode .table td i.fa-trash-alt {
+    color: #dc3545 !important;
 }
 
 body.light-mode .form-control {
