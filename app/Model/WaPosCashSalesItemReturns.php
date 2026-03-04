@@ -54,6 +54,11 @@ class WaPosCashSalesItemReturns extends Model
         return $this->belongsTo(ReturnReason::class,'reason_id');
     }
 
+    public function returnReason()
+    {
+        return $this->belongsTo(ReturnReason::class,'reason_id');
+    }
+
     public function location()
     {
         return $this->belongsTo(WaUnitOfMeasure::class,'bin_location_id');

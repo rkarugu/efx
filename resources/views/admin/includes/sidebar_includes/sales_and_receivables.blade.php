@@ -426,6 +426,7 @@
                             $model == 'pos-payments-consumption' ||
                             $model == 'pos_cash_payments' ||
                             $model == 'cash-banking-report' ||
+                            $model == 'pos-supermarket' ||
                             $model == 'pos-return-list_late')) active @endif">
                     <a href="#"><i class="fa fa-circle"></i> Sales
                         <span class="pull-right-container">
@@ -436,6 +437,10 @@
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['pos-cash-sales___view']))
                             <li class="@if (isset($model) && $model == 'pos-cash-sales') active @endif"><a
                                     href="{!! route('pos-cash-sales.index') . getReportDefaultFilterForTrialBalance() !!}"><i class="fa fa-circle"></i>Point of Sales</a></li>
+                        @endif
+                        @if ($logged_user_info->role_id == 1 || isset($my_permissions['pos-supermarket___view']))
+                            <li class="@if (isset($model) && $model == 'pos-supermarket') active @endif"><a
+                                    href="{!! route('pos-cash-sales.supermarket') !!}"><i class="fa fa-shopping-cart"></i>POS Supermarket</a></li>
                         @endif
                         @if ($logged_user_info->role_id == 1 || isset($my_permissions['pos-cash-sales___dispatch-progress']))
                             <li class="@if (isset($model) && $model == 'dispatch-progress') active @endif">

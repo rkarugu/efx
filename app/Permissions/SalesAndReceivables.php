@@ -304,6 +304,14 @@ function salesAndReceivablesPermissionFunction()
                                         'drop_cash'=>'drop_cash'
                                     ]
                                 ],
+                                'POS Supermarket' => [
+                                    'model' => 'pos-supermarket',
+                                    'permissions' => [
+                                        'view' => 'view',
+                                        'add' => 'add',
+                                        'print' => 'print',
+                                    ]
+                                ],
                                 'Cashier management' => [
                                     'model' => 'cashier-management',
                                     'permissions' => [
