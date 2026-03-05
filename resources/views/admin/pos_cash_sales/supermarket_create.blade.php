@@ -561,6 +561,98 @@
         border-radius: 3px;
     }
 
+    /* Fullscreen Mode */
+    body.pos-fullscreen .main-header,
+    body.pos-fullscreen .main-sidebar,
+    body.pos-fullscreen .header-main-menu,
+    body.pos-fullscreen .content-header {
+        display: none !important;
+    }
+
+    body.pos-fullscreen .content-wrapper {
+        margin-left: 0 !important;
+        padding-top: 0 !important;
+        min-height: 100vh !important;
+    }
+
+    body.pos-fullscreen .content-wrapper > .content {
+        padding: 0 !important;
+    }
+
+    body.pos-fullscreen .pos-container {
+        height: 100vh;
+        margin: 0;
+        border-radius: 0;
+    }
+
+    .fullscreen-toggle {
+        padding: 8px 14px;
+        border: 1px solid #e0e6ed;
+        background: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #555;
+    }
+
+    .fullscreen-toggle:hover {
+        background: #f5f7fa;
+        border-color: #03db1cac;
+        color: #03db1cac;
+    }
+
+    .fullscreen-toggle.active {
+        background: #03db1cac;
+        color: #fff;
+        border-color: #03db1cac;
+    }
+
+    .fullscreen-lock {
+        padding: 8px 14px;
+        border: 1px solid #e0e6ed;
+        background: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #555;
+    }
+
+    .fullscreen-lock:hover {
+        background: #f5f7fa;
+        border-color: #ff9800;
+        color: #ff9800;
+    }
+
+    .fullscreen-lock.locked {
+        background: #ff9800;
+        color: #fff;
+        border-color: #ff9800;
+    }
+
+    body.pos-fullscreen .fullscreen-lock {
+        display: inline-flex;
+    }
+
+    .fullscreen-hint {
+        font-size: 11px;
+        color: #999;
+        margin-left: 4px;
+    }
+
+    body.pos-fullscreen .fullscreen-hint {
+        display: none;
+    }
+
     /* Responsive */
     @media (max-width: 1200px) {
         .pos-right {
@@ -605,6 +697,14 @@
                 </button>
                 <button class="btn-modern btn-modern-secondary" onclick="reportIssue()">
                     <i class="fa fa-exclamation-circle"></i> Report Issue
+                </button>
+                <span style="flex: 1;"></span>
+                <button class="fullscreen-lock" id="fullscreen-lock-btn" onclick="toggleFullscreenLock()" title="Lock fullscreen (requires password to exit)">
+                    <i class="fa fa-unlock"></i> <span id="lock-label">Lock</span>
+                </button>
+                <button class="fullscreen-toggle" id="fullscreen-toggle-btn" onclick="toggleFullscreen()" title="Toggle fullscreen (F11)">
+                    <i class="fa fa-expand"></i> <span id="fs-label">Fullscreen</span>
+                    <span class="fullscreen-hint">(F11)</span>
                 </button>
             </div>
         </div>
@@ -782,4 +882,194 @@
 <script src="{{asset('js/supermarket-pos.js')}}?v={{time()}}"></script>
 <script src="{{asset('js/supermarket-pos-completed.js')}}?v={{time()}}"></script>
 <script src="{{asset('js/supermarket-pos-returns.js')}}?v={{time()}}"></script>
+<script>
+(function() {
+    var isFullscreen = false;
+    var isLocked = false;
+
+    // Restore state from localStorage
+    if (localStorage.getItem('pos_fullscreen') === 'true') {
+        enterFullscreen();
+    }
+    if (localStorage.getItem('pos_fullscreen_locked') === 'true') {
+        isLocked = true;
+        isFullscreen = true;
+        enterFullscreen();
+        updateLockButton();
+    }
+
+    function enterFullscreen() {
+        document.body.classList.add('pos-fullscreen');
+        isFullscreen = true;
+        localStorage.setItem('pos_fullscreen', 'true');
+        updateToggleButton();
+
+        // Also request browser fullscreen
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(function() {});
+        }
+    }
+
+    function exitFullscreen() {
+        document.body.classList.remove('pos-fullscreen');
+        isFullscreen = false;
+        localStorage.setItem('pos_fullscreen', 'false');
+        updateToggleButton();
+
+        // Also exit browser fullscreen
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(function() {});
+        }
+    }
+
+    function updateToggleButton() {
+        var btn = document.getElementById('fullscreen-toggle-btn');
+        var label = document.getElementById('fs-label');
+        var icon = btn.querySelector('i');
+        if (isFullscreen) {
+            btn.classList.add('active');
+            label.textContent = 'Exit Fullscreen';
+            icon.className = 'fa fa-compress';
+        } else {
+            btn.classList.remove('active');
+            label.textContent = 'Fullscreen';
+            icon.className = 'fa fa-expand';
+        }
+    }
+
+    function updateLockButton() {
+        var btn = document.getElementById('fullscreen-lock-btn');
+        var label = document.getElementById('lock-label');
+        var icon = btn.querySelector('i');
+        if (isLocked) {
+            btn.classList.add('locked');
+            label.textContent = 'Locked';
+            icon.className = 'fa fa-lock';
+        } else {
+            btn.classList.remove('locked');
+            label.textContent = 'Lock';
+            icon.className = 'fa fa-unlock';
+        }
+    }
+
+    // Exposed to global scope for onclick handlers
+    window.toggleFullscreen = function() {
+        if (isFullscreen) {
+            if (isLocked) {
+                promptUnlock(function() {
+                    isLocked = false;
+                    localStorage.setItem('pos_fullscreen_locked', 'false');
+                    updateLockButton();
+                    exitFullscreen();
+                });
+                return;
+            }
+            exitFullscreen();
+        } else {
+            enterFullscreen();
+        }
+    };
+
+    window.toggleFullscreenLock = function() {
+        if (isLocked) {
+            promptUnlock(function() {
+                isLocked = false;
+                localStorage.setItem('pos_fullscreen_locked', 'false');
+                updateLockButton();
+            });
+        } else {
+            // Set lock password
+            if (typeof swal !== 'undefined') {
+                swal({
+                    title: 'Set Lock Password',
+                    text: 'Enter a password to lock fullscreen mode. You will need this to exit.',
+                    type: 'input',
+                    inputType: 'password',
+                    showCancelButton: true,
+                    closeOnConfirm: false,
+                    inputPlaceholder: 'Enter password...'
+                }, function(inputValue) {
+                    if (inputValue === false) return;
+                    if (!inputValue || inputValue.trim() === '') {
+                        swal.showInputError('Please enter a password');
+                        return;
+                    }
+                    localStorage.setItem('pos_lock_password', btoa(inputValue.trim()));
+                    localStorage.setItem('pos_fullscreen_locked', 'true');
+                    isLocked = true;
+                    updateLockButton();
+                    swal('Locked!', 'Fullscreen is now locked. Press the lock button or Escape to unlock with your password.', 'success');
+                });
+            } else {
+                var pwd = prompt('Enter a password to lock fullscreen mode:');
+                if (pwd && pwd.trim()) {
+                    localStorage.setItem('pos_lock_password', btoa(pwd.trim()));
+                    localStorage.setItem('pos_fullscreen_locked', 'true');
+                    isLocked = true;
+                    updateLockButton();
+                }
+            }
+        }
+    };
+
+    function promptUnlock(onSuccess) {
+        if (typeof swal !== 'undefined') {
+            swal({
+                title: 'Unlock Fullscreen',
+                text: 'Enter the lock password to exit fullscreen mode.',
+                type: 'input',
+                inputType: 'password',
+                showCancelButton: true,
+                closeOnConfirm: false,
+                inputPlaceholder: 'Enter password...'
+            }, function(inputValue) {
+                if (inputValue === false) return;
+                var stored = localStorage.getItem('pos_lock_password');
+                if (stored && btoa(inputValue) === stored) {
+                    swal.close();
+                    onSuccess();
+                } else {
+                    swal.showInputError('Incorrect password');
+                }
+            });
+        } else {
+            var pwd = prompt('Enter the lock password to exit:');
+            var stored = localStorage.getItem('pos_lock_password');
+            if (stored && btoa(pwd) === stored) {
+                onSuccess();
+            } else {
+                alert('Incorrect password');
+            }
+        }
+    }
+
+    // Keyboard shortcut: F11 to toggle fullscreen
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'F11') {
+            e.preventDefault();
+            window.toggleFullscreen();
+        }
+        // Block Escape when locked
+        if (e.key === 'Escape' && isFullscreen && isLocked) {
+            e.preventDefault();
+            e.stopPropagation();
+            promptUnlock(function() {
+                isLocked = false;
+                localStorage.setItem('pos_fullscreen_locked', 'false');
+                updateLockButton();
+                exitFullscreen();
+            });
+        }
+    });
+
+    // Re-enter fullscreen if browser exits it but we're still in locked mode
+    document.addEventListener('fullscreenchange', function() {
+        if (!document.fullscreenElement && isFullscreen && isLocked) {
+            setTimeout(function() {
+                document.documentElement.requestFullscreen().catch(function() {});
+            }, 100);
+        }
+    });
+})();
+</script>
 @endsection
